@@ -1,0 +1,25 @@
+services:
+  bangumi:
+    build: .
+    container_name: bangumi
+    ports:
+      - "8080:8080"
+    environment:
+      BANGUMI_DB: /app/data/bangumi.db
+      BANGUMI_LISTEN: ":8080"
+    volumes:
+      # 数据持久化：SQLite 文件
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # 示例：导入数据（把 dump 放到 ./data/ 下）
+  #   docker compose run --rm import /app/data/dump-xxx.zip
+  import:
+    build: .
+    profiles: ["tools"]
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["/app/bangumi", "import", "-file"]
+    command: ["/app/data/dump.zip"]
+    environment:
+      BANGUMI_DB: /app/data/bangumi.db

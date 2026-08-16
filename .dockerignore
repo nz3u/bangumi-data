@@ -1,0 +1,13 @@
+.git/
+.gitignore
+.gitattributes
+data/
+*.db
+*.db-wal
+*.db-shm
+dump-*.zip
+web/
+bangumi
+bangumi.exe
+dist/
+*.test
