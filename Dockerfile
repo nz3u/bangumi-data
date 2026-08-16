@@ -1,3 +1,11 @@
+# 前端构建阶段
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web ./
+RUN npm run build
+
 # 构建阶段
 FROM golang:1.25-alpine AS build
 WORKDIR /src
@@ -6,11 +14,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 拷贝源码（common 子模块内嵌进二进制）
+# 拷贝源码（common 子模块与 web/dist 前端均内嵌进二进制）
 COPY embedded.go ./
 COPY cmd ./cmd
 COPY internal ./internal
 COPY common ./common
+COPY --from=web /web ./web
 
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bangumi ./cmd/bangumi
 

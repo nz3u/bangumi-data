@@ -10,8 +10,9 @@ bangumi
 bangumi.exe
 dist/
 
-# 前端（如果单独开发）
-web/
+# 前端（源码入库，构建产物忽略；web/dist 由上方 dist/ 覆盖）
+web/node_modules/
+
 
 # IDE
 .idea/
