@@ -3,11 +3,15 @@ package api
 
 import (
 	"database/sql"
+	"io/fs"
+	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"bangumi-subject-go/internal/common"
+	"bangumi-subject-go/web"
 )
 
 // handler 持有 API 所需的依赖。
@@ -17,7 +21,8 @@ type handler struct {
 }
 
 // NewRouter 构建 gin 路由。
-// webDir 非空且存在时，额外托管静态前端文件。
+// webDir 非空且存在时，优先托管磁盘上的前端目录（便于开发热更新）；
+// 否则回退到编译期内嵌的 web/dist（单二进制部署，无需额外参数）。
 func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -51,9 +56,35 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine 
 	if webDir != "" {
 		if st, err := os.Stat(webDir); err == nil && st.IsDir() {
 			r.Static("/", webDir)
+			return r
 		}
 	}
+	// 回退：托管内嵌前端（SPA，未知路径回退 index.html）
+	serveEmbedded(r, web.FS())
 	return r
+}
+
+// serveEmbedded 以内嵌文件系统托管前端。
+// 未知的非 /api 路径回退到 index.html（支持前端路由刷新），
+// 未匹配的 /api 路径返回 JSON 404。
+func serveEmbedded(r *gin.Engine, fsys fs.FS) {
+	fileServer := http.FileServer(http.FS(fsys))
+	r.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.JSON(404, gin.H{"ok": false, "error": "接口不存在"})
+			return
+		}
+		p := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if p != "" {
+			if f, err := fsys.Open(p); err == nil {
+				f.Close()
+				fileServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+		}
+		c.Request.URL.Path = "/"
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	})
 }
 
 // corsMiddleware 允许跨域（前后端分离部署时方便本地调试）。

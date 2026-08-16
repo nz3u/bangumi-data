@@ -18,6 +18,7 @@
 | 语言 | Go 1.25+ | 标准工具链交叉编译 |
 | 数据库 | SQLite（[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)） | 纯 Go 驱动，无 CGO，WAL 模式，FTS5 trigram 中文搜索 |
 | Web | [Gin](https://github.com/gin-gonic/gin) | REST API + 静态文件托管 |
+| 前端 | [Svelte 5](https://svelte.dev) + [Tailwind CSS 4](https://tailwindcss.com) + [Vite](https://vite.dev) | 搜索测试页，构建后内嵌进二进制（`web/`） |
 | YAML | [goccy/go-yaml](https://github.com/goccy/go-yaml) | 支持 common yaml 的 anchor/alias |
 | 部署 | Docker 多阶段构建 | alpine 最终镜像，数据卷持久化 |
 
@@ -52,6 +53,31 @@ docker compose run --rm import /app/data/dump.zip
 # 启动服务
 docker compose up -d bangumi
 ```
+
+## 前端页面（内嵌）
+
+`web/` 是一个 Svelte + Tailwind 的搜索测试页（条目/人物/角色搜索、分页、条目详情），
+构建产物 `web/dist` 通过 `go:embed` 内嵌进二进制，单文件即可同时提供 API 与页面。
+`serve` 时若指定了 `-web` 目录（且存在）则优先托管磁盘目录，否则回退到内嵌页面。
+
+```bash
+cd web
+npm install
+npm run build          # 生成 web/dist
+cd ..
+go build ./cmd/bangumi # 重新编译即带上最新页面（或 cd web && go generate）
+```
+
+开发模式（页面改动热更新，/api 代理到 :8080）：
+
+```bash
+go run ./cmd/bangumi serve -web web/dist   # 或直接跑内嵌版
+cd web && npm run dev
+```
+
+后续扩展复杂检索：表单字段与查询参数映射集中在 `web/src/lib/api.js` 的
+`buildSubjectQuery`，新增筛选只需在视图表单加字段并在该函数中映射；API 侧扩展见
+`internal/api/subjects.go`。
 
 ## 命令行
 
@@ -104,6 +130,7 @@ curl "localhost:8080/api/persons/1/collaborators"
 ```
 cmd/bangumi/           CLI 入口（import / serve / version）
 embedded.go            根级包：go:embed 内嵌 common/*.yml
+web/                   Svelte+Tailwind 搜索页面（embed.go 内嵌 web/dist）
 common/                bangumi/common 子模块（id 常量）
 internal/
   common/              yaml 常量解析（anchor/alias），id→中文名
