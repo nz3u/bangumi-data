@@ -1,0 +1,19 @@
+# 数据与构建产物
+data/
+*.db
+*.db-wal
+*.db-shm
+dump-*.zip
+
+# 二进制
+bangumi
+bangumi.exe
+dist/
+
+# 前端（如果单独开发）
+web/
+
+# IDE
+.idea/
+.vscode/
+*.swp
