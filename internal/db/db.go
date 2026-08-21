@@ -24,6 +24,7 @@ func Open(path string) (*sql.DB, error) {
 		"?_pragma=busy_timeout(30000)" +
 		"&_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=temp_store(MEMORY)" + // 排序/临时表走内存，加速建索引
 		"&_pragma=foreign_keys(1)" +
 		"&_pragma=cache_size(-65536)" // 64MB page cache
 
