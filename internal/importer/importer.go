@@ -48,12 +48,13 @@ func (s Stats) Total() int64 {
 
 const (
 	// 每个文件内的事务批次大小
-	batchSize = 20000
+	batchSize = 50000
 	// 日志打印间隔
 	logEvery = 100000
 )
 
-// Import 全量导入：删除旧表 -> 建表 -> 按依赖顺序导入各 jsonlines 文件。
+// Import 全量导入：删除旧表 -> 建裸表 -> 按依赖顺序导入各 jsonlines 文件
+// -> 最后统一创建索引并填充 FTS（大批量装载的最快路径）。
 // src 可以是 .zip 文件或包含 jsonlines 文件的目录。
 // limit > 0 时每个文件最多导入 limit 行（用于测试）。
 func Import(ctx context.Context, conn *sql.DB, src string, limit int64) (*Stats, error) {
@@ -112,8 +113,16 @@ func Import(ctx context.Context, conn *sql.DB, src string, limit int64) (*Stats,
 		log.Printf("导入完成 %-25s %10d 行 (%v)", step.file, n, time.Since(start).Round(time.Second))
 	}
 
-	// 重建 FTS 索引的统计（无需额外步骤，导入时已同步）
-	log.Printf("全部导入完成：共 %d 行，耗时 %v", stats.Total(), time.Since(start).Round(time.Second))
+	// 数据装载完毕：统一建索引 + 集合式填充 FTS（导入期间不维护任何索引）
+	log.Printf("开始创建索引与 FTS 全文索引...")
+	idxStart := time.Now()
+	if err := db.FinalizeSchema(conn); err != nil {
+		return stats, fmt.Errorf("创建索引/FTS: %w", err)
+	}
+	log.Printf("索引与 FTS 构建完成 (%v)", time.Since(idxStart).Round(time.Second))
+
+	log.Printf("全部导入完成：共 %d 行，耗时 %v（含索引 %v）",
+		stats.Total(), time.Since(start).Round(time.Second), time.Since(idxStart).Round(time.Second))
 	return stats, nil
 }
 
@@ -176,7 +185,7 @@ func (z *zipReadCloser) Close() error {
 	return z.zr.Close()
 }
 
-// importSubjects 导入 subjects 表并同步 FTS。
+// importSubjects 导入 subjects 表（FTS 由导入完成后的 FinalizeSchema 集合式填充）。
 func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
 	insert, err := conn.Prepare(`INSERT INTO subjects
 		(id, type, name, name_cn, infobox, platform, summary, nsfw, date, favorite, series, tags, score, score_details, rank, meta_tags)
@@ -185,11 +194,6 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 		return 0, err
 	}
 	defer insert.Close()
-	fts, err := conn.Prepare(`INSERT INTO subjects_fts(rowid, name, name_cn) VALUES (?, ?, ?)`)
-	if err != nil {
-		return 0, err
-	}
-	defer fts.Close()
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Subject{} }, func(v any) error {
 		s := v.(*model.Subject)
@@ -197,14 +201,11 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 		tags, _ := json.Marshal(s.Tags)
 		sd, _ := json.Marshal(s.ScoreDetails)
 		mt, _ := json.Marshal(s.MetaTags)
-		if _, err := insert.Exec(s.ID, s.Type, s.Name, s.NameCN, s.Infobox, s.Platform, s.Summary,
+		_, err := insert.Exec(s.ID, s.Type, s.Name, s.NameCN, s.Infobox, s.Platform, s.Summary,
 			bool2int(s.NSFW), s.Date, string(fav), bool2int(s.Series), string(tags),
-			s.Score, string(sd), s.Rank, string(mt)); err != nil {
-			return err
-		}
-		_, err := fts.Exec(s.ID, s.Name, s.NameCN)
+			s.Score, string(sd), s.Rank, string(mt))
 		return err
-	}, insert, fts)
+	}, insert)
 }
 
 func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
@@ -214,21 +215,13 @@ func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit i
 		return 0, err
 	}
 	defer insert.Close()
-	fts, err := conn.Prepare(`INSERT INTO persons_fts(rowid, name) VALUES (?, ?)`)
-	if err != nil {
-		return 0, err
-	}
-	defer fts.Close()
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Person{} }, func(v any) error {
 		p := v.(*model.Person)
 		career, _ := json.Marshal(p.Career)
-		if _, err := insert.Exec(p.ID, p.Name, p.Type, string(career), p.Infobox, p.Summary, p.Comments, p.Collects); err != nil {
-			return err
-		}
-		_, err := fts.Exec(p.ID, p.Name)
+		_, err := insert.Exec(p.ID, p.Name, p.Type, string(career), p.Infobox, p.Summary, p.Comments, p.Collects)
 		return err
-	}, insert, fts)
+	}, insert)
 }
 
 func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
@@ -238,20 +231,12 @@ func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limi
 		return 0, err
 	}
 	defer insert.Close()
-	fts, err := conn.Prepare(`INSERT INTO characters_fts(rowid, name) VALUES (?, ?)`)
-	if err != nil {
-		return 0, err
-	}
-	defer fts.Close()
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Character{} }, func(v any) error {
 		c := v.(*model.Character)
-		if _, err := insert.Exec(c.ID, c.Role, c.Name, c.Infobox, c.Summary, c.Comments, c.Collects); err != nil {
-			return err
-		}
-		_, err := fts.Exec(c.ID, c.Name)
+		_, err := insert.Exec(c.ID, c.Role, c.Name, c.Infobox, c.Summary, c.Comments, c.Collects)
 		return err
-	}, insert, fts)
+	}, insert)
 }
 
 func importEpisodes(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
