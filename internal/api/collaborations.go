@@ -382,12 +382,9 @@ func (h *handler) facetLabel(stype, position int64, isCv bool) string {
 	return h.cons.StaffCN(int(stype), int(position))
 }
 
-// sortCollabFacets 排序：制作职位按 count 倒序、同数按名称，CV 恒排末尾。
+// sortCollabFacets 排序：按 count 倒序、同数按名称（CV 与普通职位一视同仁）。
 func sortCollabFacets(list []collabFacet) {
 	sort.SliceStable(list, func(i, j int) bool {
-		if list[i].CV != list[j].CV {
-			return !list[i].CV
-		}
 		if list[i].Count != list[j].Count {
 			return list[i].Count > list[j].Count
 		}

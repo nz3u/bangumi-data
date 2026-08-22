@@ -83,8 +83,6 @@
     let groups = [...map.entries()]
       .map(([label, works]) => ({ label, works }))
       .sort((x, y) => {
-        if (x.label === '__cv__') return 1
-        if (y.label === '__cv__') return -1
         if (y.works.length !== x.works.length) return y.works.length - x.works.length
         return x.label.localeCompare(y.label, 'zh')
       })
