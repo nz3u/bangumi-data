@@ -382,7 +382,7 @@
 
         <!-- 列表区域：每次筛选/翻页数据到达后整体淡入，避免闪烁 -->
         {#key renderSeq}
-        <div class="grid gap-3" in:fade={{ duration: 150 }}>
+        <div class="grid min-w-0 w-full gap-3" in:fade={{ duration: 150 }}>
         {#if data.items.length === 0}
           <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">
             {(selA.length > 0 || selB.length > 0) ? '该职位组合下未找到合作记录' : '未找到合作记录'}
@@ -393,10 +393,10 @@
           <div class="rounded-lg border border-neutral-200 bg-white/60 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900/60">
             <Pagination total={data.total} page={page} size={size} onchange={changePage} />
           </div>
-          <div class="space-y-3">
+          <div class="min-w-0 w-full space-y-3">
             {#each visibleItems as col (col.person_id)}
               <div class="rounded-lg border border-neutral-200 bg-white/60 p-3 odd:bg-white even:bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/60 dark:odd:bg-neutral-900/60 dark:even:bg-neutral-900">
-                <div class="flex gap-3">
+                <div class="flex min-w-0 w-full gap-3">
                   <button
                     class="flex size-14 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
                     title="查看该人物的 collaborations"
@@ -418,7 +418,7 @@
                     {#if col.summary}
                       <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{col.summary}</p>
                     {/if}
-                    <div class="subject_tag_section mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                    <div class="subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each col.subjects as s (s.id)}
                         <span class="inline-flex max-w-full items-baseline gap-1">
                           <a
