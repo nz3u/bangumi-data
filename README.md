@@ -108,6 +108,7 @@ bangumi version                                               版本号
 | `GET /api/persons/:id/collaborators?page=&size=` | 与「X」合作的人物（共同作品数降序） |
 | `GET /api/persons/:id/collaboration?page=&size=` | 「人物合作」页数据：人物简介 + 分页的合作人物及共同条目（含声优等，职位 id 已转常量文本） |
 | `GET /api/persons/:id/collaboration/:other` | 双人合作：两人物共同参与的条目及双方职务（前端按职位双向合并分组展示） |
+| `GET /api/persons/:id/roles` | 「单人作品」页数据：人物参与的全部条目及职务（含 CV 出演，前端按职务分组） |
 | `GET /api/characters/search?q=&role=` | 角色搜索 |
 | `GET /api/characters/:id` | 角色详情（出演作品 + CV） |
 
@@ -131,6 +132,9 @@ curl "localhost:8080/api/persons/7906/collaboration?page=1&size=20"
 
 # 双人合作（两人共同参与的作品，含双方职务）
 curl "localhost:8080/api/persons/7906/collaboration/596"
+
+# 单人作品（该人物参与的全部作品及职务）
+curl "localhost:8080/api/persons/7906/roles"
 ```
 
 ## 项目结构

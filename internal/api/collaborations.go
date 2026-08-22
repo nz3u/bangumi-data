@@ -429,3 +429,108 @@ func (h *handler) getPersonCollaborationWith(c *gin.Context) {
 		"items":    items,
 	})
 }
+
+// ---- 单人作品（按职务分组） ----
+
+// roleWork 单人参与的条目，roles 为该人物的全部职务（职位 id 已转常量文本）。
+type roleWork struct {
+	ID       int64       `json:"id"`
+	Name     string      `json:"name"`
+	NameCN   string      `json:"name_cn"`
+	Type     int         `json:"type"`
+	TypeName string      `json:"type_name"`
+	Date     string      `json:"date"`
+	Roles    []roleLabel `json:"roles"`
+}
+
+// getPersonRoles 「单人作品」页数据：人物简介 + 其参与的全部条目及职务。
+// 参与范围 = subject-persons 制作人员 ∪ person-characters 声优等出演。
+// 条目按日期倒序、同日按 id 倒序；前端按职务分组并做快速筛选。
+func (h *handler) getPersonRoles(c *gin.Context) {
+	id, found := intParam(c, "id")
+	if !found {
+		fail(c, 400, "无效的 id")
+		return
+	}
+
+	pa, found, err := h.loadPairBrief(id)
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	if !found {
+		fail(c, 404, "人物不存在")
+		return
+	}
+
+	rows, err := h.db.Query(`WITH apps AS (
+			SELECT DISTINCT subject_id AS sid FROM subject_persons WHERE person_id = ?
+			UNION
+			SELECT DISTINCT subject_id AS sid FROM person_characters WHERE person_id = ?
+		), detail AS (
+			SELECT sp.subject_id AS sid, sp.position AS position, 0 AS is_cv, '' AS char_name
+			FROM apps ap JOIN subject_persons sp ON sp.subject_id = ap.sid AND sp.person_id = ?
+			UNION ALL
+			SELECT pc.subject_id, -1, 1, COALESCE(ch.name, '')
+			FROM apps ap2
+			JOIN person_characters pc ON pc.subject_id = ap2.sid AND pc.person_id = ?
+			LEFT JOIN characters ch ON ch.id = pc.character_id
+		)
+		SELECT s.id, s.name, s.name_cn, s.type, s.date,
+			d.position, d.is_cv, d.char_name
+		FROM apps ap
+		JOIN subjects s ON s.id = ap.sid
+		JOIN detail d ON d.sid = ap.sid
+		ORDER BY s.date DESC, s.id DESC`, id, id, id, id)
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := []*roleWork{}
+	index := map[int64]int{}
+	for rows.Next() {
+		var (
+			sid                int64
+			stype              int64
+			position, isCv     int64
+			name, nameCN, date string
+			charName           string
+		)
+		if err := rows.Scan(&sid, &name, &nameCN, &stype, &date, &position, &isCv, &charName); err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		it, ok := index[sid]
+		if !ok {
+			it = len(items)
+			index[sid] = it
+			items = append(items, &roleWork{
+				ID: sid, Name: name, NameCN: nameCN,
+				Type: int(stype), TypeName: h.cons.SubjectTypeCN(int(stype)),
+				Date: date, Roles: []roleLabel{},
+			})
+		}
+		label := roleLabel{Text: "", CV: isCv == 1}
+		if label.CV {
+			label.Text = "CV"
+			if charName != "" {
+				label.Text += "·" + charName
+			}
+		} else {
+			label.Text = h.cons.StaffCN(int(stype), int(position))
+		}
+		items[it].Roles = appendRoleLabel(items[it].Roles, label)
+	}
+	if err := rows.Err(); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+
+	respOK(c, gin.H{
+		"person": pa,
+		"total":  len(items),
+		"items":  items,
+	})
+}
