@@ -5,12 +5,14 @@
   import SubjectsView from './views/SubjectsView.svelte'
   import PersonsView from './views/PersonsView.svelte'
   import CharactersView from './views/CharactersView.svelte'
+  import CollaborationsView from './views/CollaborationsView.svelte'
   import { health, stats } from './lib/api.js'
 
   const tabs = [
     { key: 'subjects', label: '条目搜索' },
     { key: 'persons', label: '人物搜索' },
-    { key: 'characters', label: '角色搜索' }
+    { key: 'characters', label: '角色搜索' },
+    { key: 'collaborations', label: '人物合作' }
   ]
 
   let active = $state('subjects')
@@ -61,8 +63,10 @@
       <SubjectsView />
     {:else if active === 'persons'}
       <PersonsView />
-    {:else}
+    {:else if active === 'characters'}
       <CharactersView />
+    {:else}
+      <CollaborationsView />
     {/if}
   </main>
 
