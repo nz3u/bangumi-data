@@ -2,6 +2,7 @@
   import { getPairCollaboration } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PersonSuggest from '../components/PersonSuggest.svelte'
+  import PersonAvatar from '../components/PersonAvatar.svelte'
 
   let idAInput = $state('')
   let idBInput = $state('')
@@ -161,9 +162,11 @@
             <span class="text-xl font-bold text-neutral-400">×</span>
           {/if}
           <div class="flex items-center gap-3">
-            <div class="flex size-12 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300">
-              {(p.name || '?').slice(0, 1)}
-            </div>
+            <PersonAvatar
+              pid={p.id}
+              name={p.name}
+              class="size-12 rounded-full bg-sky-100 text-lg font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+            />
             <div>
               <a href={`https://bgm.tv/person/${p.id}`} target="_blank" rel="noreferrer" class="font-semibold text-sky-600 hover:underline dark:text-sky-400">{p.name}</a>
               <div class="mt-0.5 flex flex-wrap gap-1">

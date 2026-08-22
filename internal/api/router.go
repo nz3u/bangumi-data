@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bangumi-subject-go/internal/common"
+	"bangumi-subject-go/internal/pics"
 	"bangumi-subject-go/web"
 )
 
@@ -18,18 +19,20 @@ import (
 type handler struct {
 	db   *sql.DB
 	cons *common.Constants
+	pics *pics.Service
 }
 
 // NewRouter 构建 gin 路由。
 // webDir 非空且存在时，优先托管磁盘上的前端目录（便于开发热更新）；
 // 否则回退到编译期内嵌的 web/dist（单二进制部署，无需额外参数）。
-func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine {
+// picSvc 为人物头像服务，可为 nil（头像接口返回未启用）。
+func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware())
 
-	h := &handler{db: conn, cons: cons}
+	h := &handler{db: conn, cons: cons, pics: picSvc}
 
 	api := r.Group("/api")
 	{
@@ -45,6 +48,7 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine 
 		// 人物
 		api.GET("/persons/search", h.searchPersons)
 		api.GET("/persons/:id", h.getPerson)
+		api.GET("/persons/:id/avatar", h.personAvatar)
 		api.GET("/persons/:id/works", h.getPersonWorks)
 		api.GET("/persons/:id/collaborators", h.getPersonCollaborators)
 		api.GET("/persons/:id/collaboration", h.getPersonCollaboration)

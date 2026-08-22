@@ -83,6 +83,11 @@ export function getPerson(id) {
   return request(`/persons/${id}`)
 }
 
+// 人物头像解析（轮询接口）：data = {status:'ok'|'pending'|'failed', url?}
+export function personAvatar(id) {
+  return request(`/persons/${id}/avatar`)
+}
+
 export function getPersonWorks(id, params) {
   return request(`/persons/${id}/works`, params)
 }

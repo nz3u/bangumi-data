@@ -5,6 +5,7 @@
   import PinyinMatch from 'pinyin-match'
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
+  import PersonAvatar from '../components/PersonAvatar.svelte'
 
   let pidInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -309,9 +310,11 @@
       <!-- 左侧：人物简介 -->
       <aside class="rounded-lg border border-neutral-200 bg-white/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
         <div class="mb-3 flex flex-col items-center">
-          <div class="flex size-32 items-center justify-center rounded-lg bg-neutral-200 text-4xl font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-            {(data.person.name || '?').slice(0, 1)}
-          </div>
+          <PersonAvatar
+            pid={data.person.id}
+            name={data.person.name}
+            class="size-32 rounded-lg bg-neutral-200 text-4xl font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+          />
           <h2 class="mt-2 text-lg font-bold">{data.person.name}</h2>
           <div class="mt-1 flex flex-wrap justify-center gap-1">
             <span class="chip">{data.person.type_name}</span>
@@ -499,13 +502,13 @@
             {#each visibleItems as col (col.person_id)}
               <div class="rounded-lg border border-neutral-200 bg-white/60 p-3 odd:bg-white even:bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/60 dark:odd:bg-neutral-900/60 dark:even:bg-neutral-900">
                 <div class="flex min-w-0 w-full gap-3">
-                  <button
-                    class="flex size-14 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
+                  <PersonAvatar
+                    pid={col.person_id}
+                    name={col.name}
+                    class="size-14 rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
                     title="查看该人物的 collaborations"
                     onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
-                  >
-                    {(col.name || '?').slice(0, 1)}
-                  </button>
+                  />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
                       <a href={`https://bgm.tv/person/${col.person_id}`} target="_blank" rel="noreferrer" class="font-medium text-sky-600 hover:underline dark:text-sky-400">{col.name}</a>
