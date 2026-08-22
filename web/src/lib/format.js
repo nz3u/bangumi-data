@@ -1,3 +1,17 @@
+const CAREER_CN = {
+  seiyu: '声优',
+  mangaka: '漫画家',
+  illustrator: '绘师',
+  producer: '制作人',
+  artist: '音乐人',
+  writer: '作家',
+  actor: '演员'
+}
+
+export function careerCn(c) {
+  return CAREER_CN[c] ?? c
+}
+
 export function fmtScore(s) {
   return s > 0 ? s.toFixed(2) : '—'
 }

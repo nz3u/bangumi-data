@@ -1,5 +1,6 @@
 <script>
   import { getPersonRoles } from '../lib/api.js'
+  import { careerCn } from '../lib/format.js'
 
   let idInput = $state('')
   let loading = $state(false)
@@ -133,7 +134,7 @@
             <div class="mt-0.5 flex flex-wrap gap-1">
               <span class="chip">{data.person.type_name}</span>
               {#each data.person.career ?? [] as cb}
-                <span class="chip">{cb}</span>
+                <span class="chip">{careerCn(cb)}</span>
               {/each}
             </div>
           </div>
