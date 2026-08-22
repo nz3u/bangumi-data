@@ -153,7 +153,7 @@
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="collab-pid">人物 ID</label>
-      <input id="collab-pid" class="input" type="text" placeholder="如：7906 或粘贴 https://bgm.tv/person/7906" bind:value={pidInput} />
+      <input id="collab-pid" class="input" type="text" placeholder="如：1 或粘贴 https://bgm.tv/person/1" bind:value={pidInput} />
     </div>
     <div class="flex items-center gap-2">
       <button class="btn" type="submit" disabled={loading}>{loading ? '查询中…' : '查询'}</button>
