@@ -23,6 +23,9 @@ body {
   .input {
     @apply w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
   }
+  .input-xs {
+    @apply w-full rounded-md border border-neutral-300 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
+  }
   .btn {
     @apply rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50;
   }

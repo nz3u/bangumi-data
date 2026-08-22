@@ -2,6 +2,7 @@
   import { fade } from 'svelte/transition'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
+  import PinyinMatch from 'pinyin-match'
   import Pagination from '../components/Pagination.svelte'
 
   let pidInput = $state('')
@@ -20,6 +21,11 @@
 
   // ---- 前端快速搜索 ----
   let filter = $state('')
+
+  // ---- 职位标签检索 ----
+  // 同侧的悬浮轨与窄屏回退框共用一个搜索词；支持中文全文或拼音首字母（如 dy→导演）。
+  let tagQA = $state('') // 左列：当前人物职位
+  let tagQB = $state('') // 右列：合作人物职位
 
   // 支持直接输入数字 ID，或粘贴 /person/596 之类的链接
   function extractId(v) {
@@ -44,6 +50,8 @@
       data = d
       page = p
       renderSeq++
+      expandAllSubj = false // 新一页数据回到默认收缩状态
+      subjOverrides = {}
     } catch (e) {
       if (seq !== reqSeq) return
       error = e.message
@@ -68,6 +76,8 @@
     selA = []
     selB = []
     filter = ''
+    tagQA = ''
+    tagQB = ''
     error = ''
     data = null // 切换人物时清除旧内容，避免闪现旧数据
     loadPositions(pid)
@@ -125,6 +135,43 @@
     return keys.map((k) => list?.find((t) => t.key === k)?.label ?? k).join(' / ') || '不限'
   }
 
+  // 各侧按搜索词过滤后的职位标签（悬浮轨与窄屏框共用）。
+  // PinyinMatch 支持中文全文与拼音全拼/首字母匹配（如 dy→导演），空词视为全部命中。
+  const tagHit = (label, q) => {
+    const s = String(q ?? '').trim()
+    return !s || !!PinyinMatch.match(label, s)
+  }
+  const selfTagsShown = $derived.by(() => (facets?.self ?? []).filter((t) => tagHit(t.label, tagQA)))
+  const otherTagsShown = $derived.by(() => (facets?.other ?? []).filter((t) => tagHit(t.label, tagQB)))
+
+  // ---- 合作条目收缩/展开 ----
+  // 默认每人只展示前 N 条；卡片按钮单独切换，标题旁按钮全局展开/收起并清空单卡覆盖。
+  const COLLAB_PREVIEW_N = 10
+  let expandAllSubj = $state(false)
+  let subjOverrides = $state({}) // person_id -> 是否展开
+
+  function subjExpanded(pid) {
+    return subjOverrides[pid] ?? expandAllSubj
+  }
+
+  function toggleSubj(pid) {
+    subjOverrides = { ...subjOverrides, [pid]: !subjExpanded(pid) }
+  }
+
+  function toggleAllSubj() {
+    expandAllSubj = !expandAllSubj
+    subjOverrides = {}
+  }
+
+  // 当前卡片应渲染的条目：收缩时截断到前 N 条
+  function shownSubjects(col) {
+    return !subjExpanded(col.person_id) && col.subjects.length > COLLAB_PREVIEW_N
+      ? col.subjects.slice(0, COLLAB_PREVIEW_N)
+      : col.subjects
+  }
+
+  const hasCollapsible = $derived((data?.items ?? []).some((c) => (c.subjects?.length ?? 0) > COLLAB_PREVIEW_N))
+
   const tagIdleCls =
     'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'
   const tagOnCls = 'rounded-full bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sky-500'
@@ -174,7 +221,7 @@
       {#if facets}
         <div class="absolute inset-y-0 left-0 z-10 hidden w-28 -translate-x-full pr-2 min-[1440px]:block">
           <nav
-            class="sticky top-6 flex max-h-screen flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1.5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-6 flex max-h-[90vh] flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1.5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
             aria-label="当前人物职位筛选"
           >
             <div class="flex items-center justify-between gap-1 px-1 pt-0.5">
@@ -183,8 +230,16 @@
                 <button class="btn-mini shrink-0" type="button" onclick={() => clearTags('a')}>清除</button>
               {/if}
             </div>
+            <input
+              class="input-xs shrink-0"
+              type="search"
+              placeholder="搜职位…"
+              title="支持中文或拼音首字母，如 dy→导演"
+              aria-label="搜索当前人物职位标签"
+              bind:value={tagQA}
+            />
             <div class="flex min-h-0 flex-1 flex-col items-stretch gap-1 overflow-y-auto pb-0.5">
-              {#each facets.self as t (t.key)}
+              {#each selfTagsShown as t (t.key)}
                 <button
                   type="button"
                   class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${selA.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
@@ -194,7 +249,7 @@
                   <span class="min-w-0 truncate">{t.label}</span><small class="shrink-0 opacity-70">{t.count}</small>
                 </button>
               {:else}
-                <span class="px-1 text-xs text-neutral-400">无可用标签</span>
+                <span class="px-1 text-xs text-neutral-400">{facets.self.length ? '无匹配标签' : '无可用标签'}</span>
               {/each}
             </div>
           </nav>
@@ -203,7 +258,7 @@
         <!-- 右侧悬浮轨：合作人物职位（多选，内部滚动，悬停于整体外侧） -->
         <div class="absolute inset-y-0 right-0 z-10 hidden w-40 translate-x-full pl-3 2xl:block">
           <nav
-            class="sticky top-6 flex max-h-screen flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-6 flex max-h-[90vh] flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
             aria-label="合作人物职位筛选"
           >
             <div class="flex items-center justify-between gap-1 px-1">
@@ -213,8 +268,16 @@
               {/if}
             </div>
             <p class="mb-1 mt-0.5 px-1 text-[11px] leading-tight text-neutral-400">点击筛选 · 可多选</p>
-            <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-              {#each facets.other as t (t.key)}
+            <input
+              class="input-xs shrink-0"
+              type="search"
+              placeholder="搜职位…"
+              title="支持中文或拼音首字母，如 dy→导演"
+              aria-label="搜索合作人物职位标签"
+              bind:value={tagQB}
+            />
+            <div class="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+              {#each otherTagsShown as t (t.key)}
                 <button
                   type="button"
                   class={`w-full shrink-0 ${selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
@@ -224,7 +287,7 @@
                   <span class="min-w-0 truncate">{t.label}</span><small class="ml-1 shrink-0 opacity-70">{t.count}</small>
                 </button>
               {:else}
-                <span class="px-1 text-xs text-neutral-400">无可用标签</span>
+                <span class="px-1 text-xs text-neutral-400">{facets.other.length ? '无匹配标签' : '无可用标签'}</span>
               {/each}
             </div>
           </nav>
@@ -297,8 +360,15 @@
                   <button class="btn-mini" type="button" onclick={() => clearTags('a')}>清除</button>
                 {/if}
               </div>
-              <div class="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
-                {#each facets.self as t (t.key)}
+              <input
+                class="input-xs"
+                type="search"
+                placeholder="筛选职位，支持拼音首字母，如 dy→导演"
+                aria-label="搜索当前人物职位标签"
+                bind:value={tagQA}
+              />
+              <div class="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                {#each selfTagsShown as t (t.key)}
                   <button
                     type="button"
                     class={`shrink-0 ${selA.includes(t.key) ? tagOnCls : tagIdleCls}`}
@@ -308,7 +378,7 @@
                     {t.label}<small class="ml-0.5 opacity-70">{t.count}</small>
                   </button>
                 {:else}
-                  <span class="text-xs text-neutral-400">无可用标签</span>
+                  <span class="text-xs text-neutral-400">{facets.self.length ? '无匹配标签' : '无可用标签'}</span>
                 {/each}
               </div>
             </div>
@@ -321,8 +391,15 @@
                   <button class="btn-mini" type="button" onclick={() => clearTags('b')}>清除</button>
                 {/if}
               </div>
-              <div class="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
-                {#each facets.other as t (t.key)}
+              <input
+                class="input-xs"
+                type="search"
+                placeholder="筛选职位，支持拼音首字母，如 dy→导演"
+                aria-label="搜索合作人物职位标签"
+                bind:value={tagQB}
+              />
+              <div class="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                {#each otherTagsShown as t (t.key)}
                   <button
                     type="button"
                     class={`shrink-0 ${selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
@@ -332,7 +409,7 @@
                     {t.label}<small class="ml-0.5 opacity-70">{t.count}</small>
                   </button>
                 {:else}
-                  <span class="text-xs text-neutral-400">无可用标签</span>
+                  <span class="text-xs text-neutral-400">{facets.other.length ? '无匹配标签' : '无可用标签'}</span>
                 {/each}
               </div>
             </div>
@@ -345,6 +422,24 @@
 
         <h2 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-semibold subtitle">
           <span>与「{data.person.name}」合作的人物（{data.total}）</span>
+          {#if hasCollapsible}
+            <button
+              type="button"
+              class="inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+              title={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
+              aria-label={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
+              onclick={toggleAllSubj}
+            >
+              <svg
+                class="size-4 transition-transform duration-150"
+                class:rotate-180={expandAllSubj}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              >
+                <path d="m7 6 5 5 5-5" />
+                <path d="m7 13 5 5 5-5" />
+              </svg>
+            </button>
+          {/if}
           {#if facets && (selA.length > 0 || selB.length > 0)}
             <span class="text-xs font-normal text-neutral-500 dark:text-neutral-400">
               已选组合：
@@ -405,9 +500,29 @@
                     {(col.name || '?').slice(0, 1)}
                   </button>
                   <div class="min-w-0 flex-1">
-                    <h3 class="flex items-baseline gap-2">
+                    <h3 class="flex items-center gap-2">
                       <a href={`https://bgm.tv/person/${col.person_id}`} target="_blank" rel="noreferrer" class="font-medium text-sky-600 hover:underline dark:text-sky-400">{col.name}</a>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
+                      {#if col.subjects.length > COLLAB_PREVIEW_N}
+                        <button
+                          type="button"
+                          class="inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sky-600 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+                          title={subjExpanded(col.person_id) ? '收起合作条目' : `展开全部 ${col.subjects.length} 条合作条目`}
+                          aria-label={subjExpanded(col.person_id) ? `收起 ${col.name} 的合作条目` : `展开 ${col.name} 的全部 ${col.subjects.length} 条合作条目`}
+                          onclick={() => toggleSubj(col.person_id)}
+                        >
+                          <svg
+                            class="size-3.5 transition-transform duration-150"
+                            class:rotate-180={subjExpanded(col.person_id)}
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                          >
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+                        {#if !subjExpanded(col.person_id)}
+                          <small class="text-[11px] text-neutral-400">前 {COLLAB_PREVIEW_N} / {col.subjects.length} 条</small>
+                        {/if}
+                      {/if}
                     </h3>
                     <div class="mt-1 flex flex-wrap items-center gap-1">
                       <span class="chip">{col.type_name}</span>
@@ -419,7 +534,7 @@
                       <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{col.summary}</p>
                     {/if}
                     <div class="subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
-                      {#each col.subjects as s (s.id)}
+                      {#each shownSubjects(col) as s (s.id)}
                         <span class="inline-flex max-w-full items-baseline gap-1">
                           <a
                             href={`https://bgm.tv/subject/${s.id}`}
