@@ -95,6 +95,11 @@ export function getPersonCollaboration(id, params) {
   return request(`/persons/${id}/collaboration`, params)
 }
 
+// 棋盘筛选职位标签：self = 当前人物在共同条目中的职位，other = 合作人物的职位
+export function getPersonCollaborationPositions(id) {
+  return request(`/persons/${id}/collaboration/positions`)
+}
+
 export function getPairCollaboration(idA, idB) {
   return request(`/persons/${idA}/collaboration/${idB}`)
 }

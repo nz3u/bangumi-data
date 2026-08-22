@@ -48,6 +48,8 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine 
 		api.GET("/persons/:id/works", h.getPersonWorks)
 		api.GET("/persons/:id/collaborators", h.getPersonCollaborators)
 		api.GET("/persons/:id/collaboration", h.getPersonCollaboration)
+		// 静态段路由需先于 :other 参数路由注册
+		api.GET("/persons/:id/collaboration/positions", h.getPersonCollaborationPositions)
 		api.GET("/persons/:id/collaboration/:other", h.getPersonCollaborationWith)
 		api.GET("/persons/:id/roles", h.getPersonRoles)
 
