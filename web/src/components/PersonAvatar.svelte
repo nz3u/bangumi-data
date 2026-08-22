@@ -1,4 +1,5 @@
 <script>
+  import { onDestroy } from 'svelte'
   import { requestPic, picStore } from '../lib/personPic.svelte.js'
 
   // 统一的人物头像组件：
@@ -24,6 +25,27 @@
   const busy = $derived(info?.status === 'loading' || (!!info?.url && imgState === 'idle'))
   // 后端确认无图/抓取失败，或图片请求出错 → 打叉
   const bad = $derived(info?.status === 'failed' || imgState === 'broken')
+
+  // 缓存命中时解析+下载往往几十毫秒就完成，转圈一闪而过；
+  // 这里保证转圈出现后至少停留 MIN_SPINNER_MS 再消失（不阻塞队列）。
+  const MIN_SPINNER_MS = 500
+  let spinnerOn = $state(false)
+  let spinnerTimer = null
+
+  $effect(() => {
+    if (busy) {
+      clearTimeout(spinnerTimer)
+      spinnerTimer = null
+      spinnerOn = true
+    } else if (spinnerOn && !spinnerTimer) {
+      spinnerTimer = setTimeout(() => {
+        spinnerTimer = null
+        spinnerOn = false
+      }, MIN_SPINNER_MS)
+    }
+  })
+
+  onDestroy(() => clearTimeout(spinnerTimer))
 
   // 头像 URL 变化后重置图片加载状态
   $effect(() => {
@@ -77,7 +99,7 @@
       {@render inner()}
     </div>
   {/if}
-  {#if busy}
+  {#if spinnerOn}
     <span
       class="absolute -right-1 -top-1 z-10 flex size-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-700"
       title="头像解析中…"
