@@ -1,8 +1,10 @@
 <script>
   import { getPersonRoles } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
+  import PersonSuggest from '../components/PersonSuggest.svelte'
 
   let idInput = $state('')
+  let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
   let loading = $state(false)
   let error = $state('')
   let data = $state(null)
@@ -29,7 +31,8 @@
 
   function submit(e) {
     e.preventDefault()
-    const pid = extractId(idInput)
+    // 选中建议时组件已把真实 ID 同步到 pidSel；否则按原逻辑解析数字
+    const pid = pidSel ?? extractId(idInput)
     if (!pid || pid <= 0) {
       error = '请输入人物 ID（数字）'
       data = null
@@ -107,7 +110,7 @@
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="roles-pid">人物 ID</label>
-      <input id="roles-pid" class="input" type="text" placeholder="如：1 或粘贴 https://bgm.tv/person/1" bind:value={idInput} />
+      <PersonSuggest inputId="roles-pid" placeholder="如：1、名字或粘贴 https://bgm.tv/person/1" bind:text={idInput} bind:pid={pidSel} onpick={(p) => load(p.id)} />
     </div>
     <div class="flex items-center gap-2">
       <button class="btn" type="submit" disabled={loading}>{loading ? '查询中…' : '查询'}</button>
