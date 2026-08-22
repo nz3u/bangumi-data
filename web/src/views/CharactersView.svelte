@@ -43,7 +43,7 @@
 </script>
 
 <div class="grid gap-4">
-  <form class="grid gap-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4 lg:grid-cols-3" onsubmit={(e) => { e.preventDefault(); submit() }}>
+  <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-3 dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={(e) => { e.preventDefault(); submit() }}>
     <div>
       <label class="label" for="character-q">关键词</label>
       <input id="character-q" class="input" type="text" placeholder="如：五河士道" bind:value={f.q} />
@@ -64,14 +64,14 @@
   </form>
 
   {#if error}
-    <div class="rounded-md border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-400">请求失败：{error}</div>
+    <div class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">请求失败：{error}</div>
   {/if}
 
   {#if loading}
     <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
   {:else if result}
-    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60">
-      <div class="border-b border-neutral-800 px-4 py-2">
+    <div class="rounded-lg border border-neutral-200 bg-white/60 dark:border-neutral-800 dark:bg-neutral-900/60">
+      <div class="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <Pagination total={result.total} page={result.page} size={result.size} onchange={changePage} />
       </div>
       <div class="overflow-x-auto p-2">
@@ -91,8 +91,8 @@
                 <td class="text-neutral-500">{it.id}</td>
                 <td class="max-w-64 truncate">{it.name}</td>
                 <td>{it.role_name}</td>
-                <td class="text-neutral-400">{it.collects}</td>
-                <td class="text-neutral-400">{it.comments}</td>
+                <td class="text-neutral-500 dark:text-neutral-400">{it.collects}</td>
+                <td class="text-neutral-500 dark:text-neutral-400">{it.comments}</td>
               </tr>
             {/each}
           </tbody>
