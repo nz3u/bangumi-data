@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import Tabs from './components/Tabs.svelte'
+  import ThemeToggle from './components/ThemeToggle.svelte'
   import SubjectsView from './views/SubjectsView.svelte'
   import PersonsView from './views/PersonsView.svelte'
   import CharactersView from './views/CharactersView.svelte'
@@ -38,9 +39,9 @@
   <header class="mb-4 flex flex-wrap items-center gap-4">
     <h1 class="text-xl font-bold">Bangumi 本地数据搜索</h1>
     {#if svc}
-      <span class="chip text-emerald-400">服务正常</span>
+      <span class="chip text-emerald-600 dark:text-emerald-400">服务正常</span>
     {:else if svcError}
-      <span class="chip text-red-400">服务异常：{svcError}</span>
+      <span class="chip text-red-600 dark:text-red-400">服务异常：{svcError}</span>
     {/if}
     {#if st}
       <div class="flex flex-wrap gap-1">
@@ -50,6 +51,7 @@
       </div>
     {/if}
     <span class="ml-auto text-xs text-neutral-500">本地 SQLite 数据 · FTS5 检索</span>
+    <ThemeToggle />
   </header>
 
   <Tabs items={tabs} active={active} onchange={(k) => (active = k)} />
@@ -64,7 +66,7 @@
     {/if}
   </main>
 
-  <footer class="mt-8 border-t border-neutral-800 pt-3 text-xs text-neutral-500">
-    接口文档见项目 README（REST API 一节）；开发模式：<code class="text-neutral-400">cd web && npm run dev</code>（代理 /api 到 :8080）。
+  <footer class="mt-8 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
+    接口文档见项目 README（REST API 一节）；开发模式：<code>cd web && npm run dev</code>（代理 /api 到 :8080）。
   </footer>
 </div>

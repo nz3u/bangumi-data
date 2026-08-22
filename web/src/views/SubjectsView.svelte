@@ -112,7 +112,7 @@
 </script>
 
 <div class="grid gap-4">
-  <form class="grid gap-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4" onsubmit={(e) => { e.preventDefault(); submit() }}>
+  <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={(e) => { e.preventDefault(); submit() }}>
     <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <div class="col-span-2 lg:col-span-4">
         <label class="label" for="subject-q">关键词（FTS 全文搜索，中文子串匹配）</label>
@@ -204,14 +204,14 @@
   </form>
 
   {#if error}
-    <div class="rounded-md border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-400">请求失败：{error}</div>
+    <div class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">请求失败：{error}</div>
   {/if}
 
   {#if loading}
     <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
   {:else if result}
-    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60">
-      <div class="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
+    <div class="rounded-lg border border-neutral-200 bg-white/60 dark:border-neutral-800 dark:bg-neutral-900/60">
+      <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <Pagination total={result.total} page={result.page} size={result.size} onchange={changePage} />
       </div>
       <div class="overflow-x-auto p-2">
@@ -232,14 +232,14 @@
           </thead>
           <tbody>
             {#each result.items as it (it.id)}
-              <tr class="cursor-pointer hover:bg-neutral-800/50" onclick={() => openDetail(it)}>
+              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail(it)}>
                 <td class="text-neutral-500">{it.id}</td>
                 <td>{it.type_name}</td>
                 <td class="max-w-52 truncate">{it.name_cn || '—'}</td>
-                <td class="max-w-52 truncate text-neutral-400">{it.name}</td>
+                <td class="max-w-52 truncate text-neutral-500 dark:text-neutral-400">{it.name}</td>
                 <td>{it.platform_name}</td>
                 <td>{fmtDate(it.date)}</td>
-                <td class="text-amber-400">{fmtScore(it.score)}</td>
+                <td class="text-amber-600 dark:text-amber-400">{fmtScore(it.score)}</td>
                 <td>{fmtRank(it.rank)}</td>
                 <td class="max-w-60">
                   <div class="flex flex-wrap gap-1">
@@ -248,7 +248,7 @@
                     {/each}
                   </div>
                 </td>
-                <td class="max-w-48 text-xs text-neutral-400">{fmtFavorite(it.favorite)}</td>
+                <td class="max-w-48 text-xs text-neutral-500 dark:text-neutral-400">{fmtFavorite(it.favorite)}</td>
               </tr>
             {/each}
           </tbody>
@@ -262,25 +262,25 @@
     {#if detailLoading}
       <div class="py-4 text-center text-sm text-neutral-500">加载详情…</div>
     {:else if detail}
-      <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
+      <div class="rounded-lg border border-neutral-200 bg-white/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
         <div class="mb-2 flex items-center gap-2">
           <h3 class="text-base font-semibold">{detail.name_cn || detail.name}</h3>
           <span class="chip">{detail.type_name}</span>
           <span class="chip">{detail.platform_name}</span>
           {#if detail.series}<span class="chip">系列</span>{/if}
-          {#if detail.nsfw}<span class="chip text-red-400">R18</span>{/if}
+          {#if detail.nsfw}<span class="chip text-red-600 dark:text-red-400">R18</span>{/if}
           <button class="ml-auto btn-mini" onclick={() => (detail = null)}>关闭</button>
         </div>
         {#if detail.error}
-          <p class="text-sm text-red-400">详情加载失败：{detail.error}</p>
+          <p class="text-sm text-red-600 dark:text-red-400">详情加载失败：{detail.error}</p>
         {:else}
-          <p class="mb-2 text-sm text-neutral-400">{detail.summary || '（无简介）'}</p>
+          <p class="mb-2 text-sm text-neutral-500 dark:text-neutral-400">{detail.summary || '（无简介）'}</p>
           <div class="grid gap-4 lg:grid-cols-3">
             <section>
-              <h4 class="mb-1 text-xs font-medium text-neutral-400">关联（{detail.relations.length}）</h4>
+              <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联（{detail.relations.length}）</h4>
               <ul class="space-y-0.5 text-sm">
                 {#each detail.relations as r}
-                  <li class="text-neutral-300">
+                  <li class="text-neutral-700 dark:text-neutral-300">
                     <span class="text-neutral-500">{r.relation_name}</span> →
                     <span class="text-neutral-500">{r.related_type_name}</span> {r.related_name_cn || r.related_name}
                   </li>
@@ -288,20 +288,20 @@
               </ul>
             </section>
             <section>
-              <h4 class="mb-1 text-xs font-medium text-neutral-400">制作人员（{detail.staff.length}）</h4>
+              <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">制作人员（{detail.staff.length}）</h4>
               <ul class="space-y-0.5 text-sm">
                 {#each detail.staff as s}
-                  <li class="text-neutral-300">
+                  <li class="text-neutral-700 dark:text-neutral-300">
                     <span class="text-neutral-500">{s.position_name}</span> {s.person_name}
                   </li>
                 {/each}
               </ul>
             </section>
             <section>
-              <h4 class="mb-1 text-xs font-medium text-neutral-400">角色（{detail.characters.length}）</h4>
+              <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">角色（{detail.characters.length}）</h4>
               <ul class="space-y-0.5 text-sm">
                 {#each detail.characters as c}
-                  <li class="text-neutral-300">
+                  <li class="text-neutral-700 dark:text-neutral-300">
                     <span class="text-neutral-500">{c.role_name}</span> {c.name}
                   </li>
                 {/each}
