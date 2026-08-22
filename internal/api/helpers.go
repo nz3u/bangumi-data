@@ -93,7 +93,8 @@ type subjectBrief struct {
 }
 
 // scanSubjectBrief 读取 subjects 行到 subjectBrief。
-func (h *handler) scanSubjectBrief(row interface{ Scan(...any) error }) (*subjectBrief, error) {
+// total 非 nil 时，行末需附带 COUNT(*) OVER() 的总数字段（计数与取数合并为一次扫描）。
+func (h *handler) scanSubjectBrief(row interface{ Scan(...any) error }, total *int64) (*subjectBrief, error) {
 	var (
 		id, typ, platform, rank int64
 		name, nameCN, date      string
@@ -101,7 +102,11 @@ func (h *handler) scanSubjectBrief(row interface{ Scan(...any) error }) (*subjec
 		nsfw                    int64
 		score                   float64
 	)
-	if err := row.Scan(&id, &typ, &name, &nameCN, &platform, &date, &nsfw, &score, &rank, &tags, &fav); err != nil {
+	dest := []any{&id, &typ, &name, &nameCN, &platform, &date, &nsfw, &score, &rank, &tags, &fav}
+	if total != nil {
+		dest = append(dest, total)
+	}
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
 	return &subjectBrief{

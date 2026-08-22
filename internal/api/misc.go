@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +51,14 @@ func (h *handler) constants(c *gin.Context) {
 		"staffs":                  cons.Staffs,
 		"person_relations":        cons.PersonRelations,
 	})
+}
+
+// ftsMinRunes trigram 分词器按 3 个字符建索引，查询词达到该长度才能命中全文索引。
+const ftsMinRunes = 3
+
+// useFTS 关键词足够长时走 FTS 索引；更短的关键词由调用方回退 LIKE 子串匹配。
+func useFTS(q string) bool {
+	return utf8.RuneCountInString(q) >= ftsMinRunes
 }
 
 // ftsPhrase 构造 FTS5 trigram 短语查询。

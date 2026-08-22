@@ -53,18 +53,24 @@ func (h *handler) searchCharacters(c *gin.Context) {
 		args  []any
 	)
 	if q != "" {
-		ids, err := h.ftsRowIDs("characters_fts", q)
-		if err == nil {
-			if len(ids) == 0 {
-				respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
-				return
-			}
-			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-			conds = append(conds, "c.id IN ("+placeholders+")")
-			for _, id := range ids {
-				args = append(args, id)
+		if useFTS(q) {
+			ids, err := h.ftsRowIDs("characters_fts", q)
+			if err == nil {
+				if len(ids) == 0 {
+					respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+					return
+				}
+				placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+				conds = append(conds, "c.id IN ("+placeholders+")")
+				for _, id := range ids {
+					args = append(args, id)
+				}
+			} else {
+				conds = append(conds, "c.name LIKE ?")
+				args = append(args, "%"+q+"%")
 			}
 		} else {
+			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
 			conds = append(conds, "c.name LIKE ?")
 			args = append(args, "%"+q+"%")
 		}
@@ -80,14 +86,9 @@ func (h *handler) searchCharacters(c *gin.Context) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
-	var total int64
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM characters c"+where, args...).Scan(&total); err != nil {
-		fail(c, 500, err.Error())
-		return
-	}
-
 	queryArgs := append(args, size, (page-1)*size)
-	rows, err := h.db.Query(`SELECT c.id, c.name, c.role, c.collects, c.comments
+	// COUNT(*) OVER() 将总数统计与数据页读取合并为一次扫描
+	rows, err := h.db.Query(`SELECT c.id, c.name, c.role, c.collects, c.comments, COUNT(*) OVER()
 		FROM characters c`+where+` ORDER BY c.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -104,9 +105,10 @@ func (h *handler) searchCharacters(c *gin.Context) {
 		Comments int    `json:"comments"`
 	}
 	items := make([]characterBrief, 0, size)
+	var total int64
 	for rows.Next() {
 		var it characterBrief
-		if err := rows.Scan(&it.ID, &it.Name, &it.Role, &it.Collects, &it.Comments); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Role, &it.Collects, &it.Comments, &total); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
