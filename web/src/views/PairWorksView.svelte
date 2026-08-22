@@ -1,5 +1,6 @@
 <script>
   import { getPairCollaboration } from '../lib/api.js'
+  import { careerCn } from '../lib/format.js'
 
   let idAInput = $state('')
   let idBInput = $state('')
@@ -164,7 +165,7 @@
               <div class="mt-0.5 flex flex-wrap gap-1">
                 <span class="chip">{p.type_name}</span>
                 {#each p.career ?? [] as cb}
-                  <span class="chip">{cb}</span>
+                  <span class="chip">{careerCn(cb)}</span>
                 {/each}
               </div>
             </div>

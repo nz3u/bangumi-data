@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { searchPersons } from '../lib/api.js'
   import { loadConstants, enumList } from '../lib/constants.js'
+  import { careerCn } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
 
   let cons = $state(null)
@@ -95,7 +96,7 @@
                 <td>
                   <div class="flex flex-wrap gap-1">
                     {#each it.career ?? [] as c}
-                      <span class="chip">{c}</span>
+                      <span class="chip">{careerCn(c)}</span>
                     {/each}
                   </div>
                 </td>

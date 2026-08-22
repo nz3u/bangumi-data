@@ -1,6 +1,7 @@
 <script>
   import { fade } from 'svelte/transition'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
+  import { careerCn } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
 
   let pidInput = $state('')
@@ -140,7 +141,7 @@
         col.name,
         col.type_name,
         col.summary,
-        ...(col.career ?? []),
+        ...(col.career ?? []).map(careerCn),
         ...(col.subjects ?? []).flatMap((s) => [s.name_cn, s.name, s.date, s.type_name, ...(s.roles ?? [])])
       ]
         .join('\n')
@@ -246,7 +247,7 @@
           <div class="mt-1 flex flex-wrap justify-center gap-1">
             <span class="chip">{data.person.type_name}</span>
             {#each data.person.career ?? [] as cb}
-              <span class="chip">{cb}</span>
+              <span class="chip">{careerCn(cb)}</span>
             {/each}
           </div>
         </div>
@@ -410,7 +411,7 @@
                     <div class="mt-1 flex flex-wrap items-center gap-1">
                       <span class="chip">{col.type_name}</span>
                       {#each col.career ?? [] as cb}
-                        <span class="chip">{cb}</span>
+                        <span class="chip">{careerCn(cb)}</span>
                       {/each}
                     </div>
                     {#if col.summary}
