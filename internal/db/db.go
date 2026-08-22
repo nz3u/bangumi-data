@@ -26,7 +26,8 @@ func Open(path string) (*sql.DB, error) {
 		"&_pragma=synchronous(NORMAL)" +
 		"&_pragma=temp_store(MEMORY)" + // 排序/临时表走内存，加速建索引
 		"&_pragma=foreign_keys(1)" +
-		"&_pragma=cache_size(-65536)" // 64MB page cache
+		"&_pragma=cache_size(-65536)" + // 64MB page cache
+		"&_pragma=mmap_size(536870912)" // 512MB mmap，加速全表扫描（LIKE 回退等场景）
 
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {

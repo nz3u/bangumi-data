@@ -20,19 +20,26 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	)
 
 	if q != "" {
-		// 先尝试 FTS，失败则回退 LIKE（FTS 语法错误等场景）
-		ids, err := h.ftsRowIDs("subjects_fts", q)
-		if err == nil {
-			if len(ids) == 0 {
-				respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
-				return
-			}
-			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-			conds = append(conds, "s.id IN ("+placeholders+")")
-			for _, id := range ids {
-				args = append(args, id)
+		if useFTS(q) {
+			// 先尝试 FTS，失败则回退 LIKE（FTS 语法错误等场景）
+			ids, err := h.ftsRowIDs("subjects_fts", q)
+			if err == nil {
+				if len(ids) == 0 {
+					respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+					return
+				}
+				placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+				conds = append(conds, "s.id IN ("+placeholders+")")
+				for _, id := range ids {
+					args = append(args, id)
+				}
+			} else {
+				like := "%" + q + "%"
+				conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
+				args = append(args, like, like)
 			}
 		} else {
+			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
 			like := "%" + q + "%"
 			conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
 			args = append(args, like, like)
@@ -86,12 +93,6 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
-	var total int64
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM subjects s"+where, args...).Scan(&total); err != nil {
-		fail(c, 500, err.Error())
-		return
-	}
-
 	// 排序
 	sort := c.DefaultQuery("sort", "id")
 	order := strings.ToLower(c.DefaultQuery("order", "asc"))
@@ -116,7 +117,8 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, size, (page-1)*size)
 
-	rows, err := h.db.Query("SELECT "+subjectBriefCols+" FROM subjects s"+where+" ORDER BY "+orderBy+" LIMIT ? OFFSET ?", queryArgs...)
+	// COUNT(*) OVER() 将总数统计与数据页读取合并为一次扫描
+	rows, err := h.db.Query("SELECT "+subjectBriefCols+", COUNT(*) OVER() FROM subjects s"+where+" ORDER BY "+orderBy+" LIMIT ? OFFSET ?", queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
@@ -124,8 +126,9 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	defer rows.Close()
 
 	items := make([]*subjectBrief, 0, size)
+	var total int64
 	for rows.Next() {
-		item, err := h.scanSubjectBrief(rows)
+		item, err := h.scanSubjectBrief(rows, &total)
 		if err != nil {
 			fail(c, 500, err.Error())
 			return
@@ -210,7 +213,7 @@ func (h *handler) getSubject(c *gin.Context) {
 		return
 	}
 
-	base, err := h.scanSubjectBrief(h.db.QueryRow(`SELECT `+subjectBriefCols+` FROM subjects s WHERE s.id = ?`, id))
+	base, err := h.scanSubjectBrief(h.db.QueryRow(`SELECT `+subjectBriefCols+` FROM subjects s WHERE s.id = ?`, id), nil)
 	if err != nil {
 		fail(c, 404, "条目不存在")
 		return
