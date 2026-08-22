@@ -23,13 +23,53 @@
   let svc = $state(null)
   let st = $state(null)
   let svcError = $state('')
+  let lastUpdate = $state(null)
 
-  onMount(async () => {
+  const POLL_MS = 10000
+
+  async function refreshHealth() {
     try {
       svc = await health()
-      st = await stats()
+      svcError = ''
     } catch (e) {
+      svc = null
       svcError = e.message
+    }
+  }
+
+  async function refreshStats() {
+    try {
+      st = await stats()
+    } catch {
+      st = null
+    }
+  }
+
+  let inflight = false
+  async function pollOnce() {
+    if (document.hidden || inflight) return
+    inflight = true
+    try {
+      await Promise.all([refreshHealth(), refreshStats()])
+      lastUpdate = new Date()
+    } finally {
+      inflight = false
+    }
+  }
+
+  onMount(() => {
+    const timer = setInterval(pollOnce, POLL_MS)
+
+    const onVisibility = () => {
+      if (!document.hidden) pollOnce()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    pollOnce()
+
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   })
 
@@ -45,7 +85,9 @@
   <header class="mb-4 flex flex-wrap items-center gap-4">
     <h1 class="text-xl font-bold">Bangumi 本地数据搜索</h1>
     {#if svc}
-      <span class="chip text-emerald-600 dark:text-emerald-400">服务正常</span>
+      <span class="chip text-emerald-600 dark:text-emerald-400">
+        服务正常{#if lastUpdate} · {lastUpdate.toLocaleTimeString('zh-CN', { hour12: false })}{/if}
+      </span>
     {:else if svcError}
       <span class="chip text-red-600 dark:text-red-400">服务异常：{svcError}</span>
     {/if}
