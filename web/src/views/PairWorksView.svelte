@@ -129,11 +129,11 @@
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="pair-ida">人物 A ID</label>
-      <input id="pair-ida" class="input" type="text" placeholder="如：7906 或粘贴链接" bind:value={idAInput} />
+      <input id="pair-ida" class="input" type="text" placeholder="如：1 或粘贴链接" bind:value={idAInput} />
     </div>
     <div>
       <label class="label" for="pair-idb">人物 B ID</label>
-      <input id="pair-idb" class="input" type="text" placeholder="如：596 或粘贴链接" bind:value={idBInput} />
+      <input id="pair-idb" class="input" type="text" placeholder="如：5076 或粘贴链接" bind:value={idBInput} />
     </div>
     <div class="flex items-center gap-2">
       <button class="btn" type="submit" disabled={loading}>{loading ? '查询中…' : '查询'}</button>
