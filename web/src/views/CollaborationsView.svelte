@@ -170,29 +170,28 @@
     <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
   {:else if data}
     <div class="relative">
-      <!-- 左侧悬浮轨：当前人物职位（多选，内部滚动，悬停于整体外侧） -->
+      <!-- 左侧悬浮轨：当前人物职位（细长列表，悬浮于页面左侧留白） -->
       {#if facets}
-        <div class="absolute inset-y-0 left-0 z-10 hidden w-40 -translate-x-full pr-3 2xl:block">
+        <div class="absolute inset-y-0 left-0 z-10 hidden w-28 -translate-x-full pr-2 min-[1440px]:block">
           <nav
-            class="sticky top-6 flex max-h-[calc(100vh-3rem)] flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-6 flex max-h-screen flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1.5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
             aria-label="当前人物职位筛选"
           >
-            <div class="flex items-center justify-between gap-1 px-1">
-              <span class="text-xs font-semibold">当前人物职位</span>
+            <div class="flex items-center justify-between gap-1 px-1 pt-0.5">
+              <span class="text-[11px] font-semibold leading-tight">当前人物职位</span>
               {#if selA.length > 0}
-                <button class="btn-mini" type="button" onclick={() => clearTags('a')}>清除</button>
+                <button class="btn-mini shrink-0" type="button" onclick={() => clearTags('a')}>清除</button>
               {/if}
             </div>
-            <p class="mb-1 mt-0.5 px-1 text-[11px] leading-tight text-neutral-400">点击筛选 · 可多选</p>
-            <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+            <div class="flex min-h-0 flex-1 flex-col items-stretch gap-1 overflow-y-auto pb-0.5">
               {#each facets.self as t (t.key)}
                 <button
                   type="button"
-                  class={`w-full shrink-0 ${selA.includes(t.key) ? tagOnCls : tagIdleCls}`}
+                  class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${selA.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
                   title={`筛选当前人物担任「${t.label}」的共同条目`}
                   onclick={() => toggleTag('a', t.key)}
                 >
-                  <span class="min-w-0 truncate">{t.label}</span><small class="ml-1 shrink-0 opacity-70">{t.count}</small>
+                  <span class="min-w-0 truncate">{t.label}</span><small class="shrink-0 opacity-70">{t.count}</small>
                 </button>
               {:else}
                 <span class="px-1 text-xs text-neutral-400">无可用标签</span>
@@ -204,7 +203,7 @@
         <!-- 右侧悬浮轨：合作人物职位（多选，内部滚动，悬停于整体外侧） -->
         <div class="absolute inset-y-0 right-0 z-10 hidden w-40 translate-x-full pl-3 2xl:block">
           <nav
-            class="sticky top-6 flex max-h-[calc(100vh-3rem)] flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-6 flex max-h-screen flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
             aria-label="合作人物职位筛选"
           >
             <div class="flex items-center justify-between gap-1 px-1">
@@ -288,9 +287,9 @@
 
       <!-- 右侧：快速搜索 + 合作人物列表 -->
       <section class="min-w-0 grid gap-3">
-        <!-- 窄屏回退：两组职位标签横向排布于列表上方（宽屏时使用两侧悬浮轨） -->
+        <!-- 窄屏回退：职位标签横向排布于列表上方（达到各自阈值后改用两侧悬浮轨） -->
         {#if facets}
-          <div class="2xl:hidden grid gap-x-4 gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 min-[1440px]:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 <span>当前人物职位{selA.length > 0 ? `（已选 ${selA.length}）` : '（可多选）'}</span>
@@ -313,6 +312,8 @@
                 {/each}
               </div>
             </div>
+          </div>
+          <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 2xl:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 <span>合作人物职位{selB.length > 0 ? `（已选 ${selB.length}）` : '（可多选）'}</span>
