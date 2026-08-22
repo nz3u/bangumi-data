@@ -106,6 +106,7 @@ bangumi version                                               版本号
 | `GET /api/persons/:id` | 人物详情（含人物/角色关联） |
 | `GET /api/persons/:id/works?position=&subject_type=&page=&size=` | 人物参与的作品（按职位/类型筛选） |
 | `GET /api/persons/:id/collaborators?page=&size=` | 与「X」合作的人物（共同作品数降序） |
+| `GET /api/persons/:id/collaboration?page=&size=` | 「人物合作」页数据：人物简介 + 分页的合作人物及共同条目（含声优等，职位 id 已转常量文本） |
 | `GET /api/characters/search?q=&role=` | 角色搜索 |
 | `GET /api/characters/:id` | 角色详情（出演作品 + CV） |
 
@@ -123,6 +124,9 @@ curl "localhost:8080/api/subjects/search?q=路人女主的养成方法"
 
 # 与人物 1 合作的声优/制作人员（对应前端合作板块）
 curl "localhost:8080/api/persons/1/collaborators"
+
+# 「人物合作」页（左侧人物简介 + 右侧合作人物及共同条目，含 CV 出演，按共同条目数倒序分页）
+curl "localhost:8080/api/persons/7906/collaboration?page=1&size=20"
 ```
 
 ## 项目结构
