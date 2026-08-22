@@ -95,6 +95,10 @@ export function getPersonCollaboration(id, params) {
   return request(`/persons/${id}/collaboration`, params)
 }
 
+export function getPairCollaboration(idA, idB) {
+  return request(`/persons/${idA}/collaboration/${idB}`)
+}
+
 // ---- 角色 ----
 
 export function searchCharacters(filters) {
