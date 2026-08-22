@@ -99,6 +99,10 @@ export function getPairCollaboration(idA, idB) {
   return request(`/persons/${idA}/collaboration/${idB}`)
 }
 
+export function getPersonRoles(id) {
+  return request(`/persons/${id}/roles`)
+}
+
 // ---- 角色 ----
 
 export function searchCharacters(filters) {

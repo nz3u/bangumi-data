@@ -49,6 +49,7 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string) *gin.Engine 
 		api.GET("/persons/:id/collaborators", h.getPersonCollaborators)
 		api.GET("/persons/:id/collaboration", h.getPersonCollaboration)
 		api.GET("/persons/:id/collaboration/:other", h.getPersonCollaborationWith)
+		api.GET("/persons/:id/roles", h.getPersonRoles)
 
 		// 角色
 		api.GET("/characters/search", h.searchCharacters)
