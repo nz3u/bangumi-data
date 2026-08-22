@@ -4,8 +4,10 @@
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
   import Pagination from '../components/Pagination.svelte'
+  import PersonSuggest from '../components/PersonSuggest.svelte'
 
   let pidInput = $state('')
+  let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
   let loading = $state(false)
   let error = $state('')
   let data = $state(null)
@@ -86,13 +88,18 @@
 
   function submit(e) {
     e.preventDefault()
-    const pid = extractId(pidInput)
+    // 选中建议时组件已把真实 ID 同步到 pidSel；否则按原逻辑解析数字
+    const pid = pidSel ?? extractId(pidInput)
     if (!pid || pid <= 0) {
       error = '请输入人物 ID（数字）'
       data = null
       return
     }
     search(pid)
+  }
+
+  function pickPerson(p) {
+    search(p.id)
   }
 
   // 点击棋盘标签：切换选中并自动重新请求（回到第 1 页）
@@ -201,7 +208,7 @@
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="collab-pid">人物 ID</label>
-      <input id="collab-pid" class="input" type="text" placeholder="如：1 或粘贴 https://bgm.tv/person/1" bind:value={pidInput} />
+      <PersonSuggest inputId="collab-pid" placeholder="如：1、名字或粘贴 https://bgm.tv/person/1" bind:text={pidInput} bind:pid={pidSel} onpick={pickPerson} />
     </div>
     <div class="flex items-center gap-2">
       <button class="btn" type="submit" disabled={loading}>{loading ? '查询中…' : '查询'}</button>
@@ -495,7 +502,7 @@
                   <button
                     class="flex size-14 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
                     title="查看该人物的 collaborations"
-                    onclick={() => { pidInput = String(col.person_id); search(col.person_id) }}
+                    onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
                   >
                     {(col.name || '?').slice(0, 1)}
                   </button>
