@@ -81,7 +81,7 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 	if len(fa.staff) > 0 {
 		cond, cargs := staffConds("sa.type", "sp.position", fa.staff)
 		branches = append(branches, `SELECT sp.subject_id FROM subject_persons sp
-			JOIN subjects sa ON sa.id = sp.subject_id
+			CROSS JOIN subjects sa ON sa.id = sp.subject_id
 			WHERE sp.person_id = ? AND (`+cond+`)`)
 		args = append(append(args, id), cargs...)
 	}
@@ -94,14 +94,18 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 
 // buildCollabPairsCTE 组装 pairs CTE（(合作人物, 共同条目) 对）。
 // fb 启用时仅保留合作人物担任所选职位的条目对；返回 CTE 文本与按序参数。
+//
+// CROSS JOIN 强制以 app（小结果集）为外层循环：`person_id <> ?` 这类
+// 非等值条件无法用作索引约束，普通 JOIN 下优化器可能误选对
+// subject_persons/person_characters 全表扫描（210 万行，秒级开销）。
 func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 	if fb.empty() {
 		return `pairs AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid
-			FROM app ap JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?
+			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?
 			UNION
 			SELECT pc.person_id, ap.subject_id
-			FROM app ap JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
+			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 		)`, []any{id, id}
 	}
 	joinSubjects, cond, condArgs := "", "1=1", []any{}
@@ -115,12 +119,12 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 	}
 	sql := `pairs AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid
-			FROM app ap JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?` +
+			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?` +
 		joinSubjects + `
 			WHERE ` + cond + `
 			UNION
 			SELECT pc.person_id, ap.subject_id
-			FROM app ap JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
+			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 			WHERE ` + cvCond + `
 		)`
 	return sql, append(append([]any{id}, condArgs...), id)
@@ -212,19 +216,24 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 		return
 	}
 
-	// 合作人物汇总（UNION 对 (person_id, subject_id) 去重，COUNT 即共同条目数）；
-	// COUNT(*) OVER() 在分组后统计总组数（合作人物总数）
+	// 合作人物汇总：先按人物聚合出 (合作人物, 共同条目数) 并分页，
+	// 之后再回表取 persons 的 name/career/summary 等大文本——
+	// 合作人物可达数万，提前 JOIN 会为所有人生成并排序携带大字段的行。
+	// agg 内 COUNT(*) OVER() 在分组后统计总组数（合作人物总数）。
 	appSQL, appArgs := buildCollabAppCTE(id, fa)
 	pairsSQL, pairsArgs := buildCollabPairsCTE(id, fb)
 	args := append(append([]any{}, appArgs...), pairsArgs...)
 	args = append(args, size, (page-1)*size)
 	rows, err := h.db.Query(`WITH `+appSQL+`,
-`+pairsSQL+`
-		SELECT pr.other, p.name, p.type, p.career, p.summary, COUNT(*) AS cnt, COUNT(*) OVER()
-		FROM pairs pr JOIN persons p ON p.id = pr.other
-		GROUP BY pr.other
-		ORDER BY cnt DESC, pr.other ASC
-		LIMIT ? OFFSET ?`, args...)
+`+pairsSQL+`,
+		agg AS (
+			SELECT other, COUNT(*) AS cnt, COUNT(*) OVER() AS total
+			FROM pairs GROUP BY other
+		)
+		SELECT a.other, p.name, p.type, p.career, p.summary, a.cnt, a.total
+		FROM (SELECT * FROM agg ORDER BY cnt DESC, other ASC LIMIT ? OFFSET ?) a
+		JOIN persons p ON p.id = a.other
+		ORDER BY a.cnt DESC, a.other ASC`, args...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
@@ -282,18 +291,20 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	queryArgs = append(queryArgs, inArgs...)
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(items)), ",")
+	// CROSS JOIN 固定连接顺序：app/detail 均为小结果集，
+	// 避免 SQLite 把大表（subjects/subject_persons）选作外层全表扫描
 	rows, err := h.db.Query(`WITH `+appSQL+`,
 		detail AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid, sp.position AS position, 0 AS is_cv, '' AS char_name
-			FROM app ap JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)
+			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)
 			UNION ALL
 			SELECT pc.person_id, ap.subject_id, -1, 1, COALESCE(ch.name, '')
 			FROM app ap
-			JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id IN (`+placeholders+`)
+			CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id IN (`+placeholders+`)
 			LEFT JOIN characters ch ON ch.id = pc.character_id
 		)
 		SELECT d.other, d.position, d.is_cv, d.char_name, s.id, s.name, s.name_cn, s.type, s.date
-		FROM detail d JOIN subjects s ON s.id = d.sid`, queryArgs...)
+		FROM detail d CROSS JOIN subjects s ON s.id = d.sid`, queryArgs...)
 	if err != nil {
 		return err
 	}
@@ -410,29 +421,34 @@ func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 		return
 	}
 
+	// 直接从基表枚举「他人在共同条目中的角色」：
+	//   - 无需先物化 pairs 再逐对回查角色表（旧写法秒级开销）；
+	//   - app_t 把条目类型映射物化为 615 行级小表，避免每行探测 subjects 大表；
+	//   - CROSS JOIN 固定 app 为外层循环，杜绝 `person_id <> ?` 引发的全表扫描。
+	// other_facets 的 DISTINCT 保留 (stype,pos,is_cv,oid,sid) 口径：
+	// 同一人物在同一条目可配音多个角色（person_characters 多行），需去重后计数。
 	rows, err := h.db.Query(`WITH `+collaborationAppCTE+`,
-		pairs AS (
-			SELECT sp.person_id AS other, ap.subject_id AS sid
-			FROM app ap JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?
-			UNION
-			SELECT pc.person_id, ap.subject_id
-			FROM app ap JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
+		app_t AS (
+			SELECT ap.subject_id AS sid, sa.type AS stype
+			FROM app ap CROSS JOIN subjects sa ON sa.id = ap.subject_id
 		),
 		self_roles AS (
-			SELECT sa.type AS stype, sp.position AS pos, 0 AS is_cv, ap.subject_id AS sid
-			FROM app ap JOIN subjects sa ON sa.id = ap.subject_id
-			JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id = ?
+			SELECT t.stype, sp.position AS pos, 0 AS is_cv, ap.subject_id AS sid
+			FROM app ap
+			CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id = ?
+			JOIN app_t t ON t.sid = ap.subject_id
 			UNION ALL
 			SELECT 0, 0, 1, ap.subject_id
-			FROM app ap JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id = ?
+			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id = ?
 		),
 		other_roles AS (
-			SELECT sb.type AS stype, sp.position AS pos, 0 AS is_cv, pr.other AS oid, pr.sid AS sid
-			FROM pairs pr JOIN subject_persons sp ON sp.subject_id = pr.sid AND sp.person_id = pr.other
-			JOIN subjects sb ON sb.id = pr.sid
+			SELECT t.stype, sp.position AS pos, 0 AS is_cv, sp.person_id AS oid, ap.subject_id AS sid
+			FROM app ap
+			CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?
+			JOIN app_t t ON t.sid = ap.subject_id
 			UNION ALL
-			SELECT 0, 0, 1, pr.other, pr.sid
-			FROM pairs pr JOIN person_characters pc ON pc.subject_id = pr.sid AND pc.person_id = pr.other
+			SELECT 0, 0, 1, pc.person_id, ap.subject_id
+			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 		),
 		self_facets AS (
 			SELECT stype, pos, MAX(is_cv) AS is_cv, COUNT(DISTINCT sid) AS cnt
@@ -507,14 +523,14 @@ type roleLabel struct {
 
 // pairWork 两人物共同参与的条目，分别携带双方职务（职位 id 已转常量文本）。
 type pairWork struct {
-	ID           int64       `json:"id"`
-	Name         string      `json:"name"`
-	NameCN       string      `json:"name_cn"`
-	Type         int         `json:"type"`
-	TypeName     string      `json:"type_name"`
-	Date         string      `json:"date"`
-	RolesA       []roleLabel `json:"roles_a"`
-	RolesB       []roleLabel `json:"roles_b"`
+	ID       int64       `json:"id"`
+	Name     string      `json:"name"`
+	NameCN   string      `json:"name_cn"`
+	Type     int         `json:"type"`
+	TypeName string      `json:"type_name"`
+	Date     string      `json:"date"`
+	RolesA   []roleLabel `json:"roles_a"`
+	RolesB   []roleLabel `json:"roles_b"`
 }
 
 // loadPairBrief 读取人物简介（不存在返回 false）。
@@ -614,11 +630,11 @@ func (h *handler) getPersonCollaborationWith(c *gin.Context) {
 	index := map[int64]int{}
 	for rows.Next() {
 		var (
-			sid, pid              int64
-			stype                 int64
-			position, isCv        int64
-			name, nameCN, date    string
-			charName              string
+			sid, pid           int64
+			stype              int64
+			position, isCv     int64
+			name, nameCN, date string
+			charName           string
 		)
 		if err := rows.Scan(&sid, &name, &nameCN, &stype, &date, &pid, &position, &isCv, &charName); err != nil {
 			fail(c, 500, err.Error())
@@ -631,7 +647,7 @@ func (h *handler) getPersonCollaborationWith(c *gin.Context) {
 			items = append(items, &pairWork{
 				ID: sid, Name: name, NameCN: nameCN,
 				Type: int(stype), TypeName: h.cons.SubjectTypeCN(int(stype)),
-				Date: date,
+				Date:   date,
 				RolesA: []roleLabel{}, RolesB: []roleLabel{},
 			})
 		}
