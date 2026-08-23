@@ -170,6 +170,15 @@ func cmdServe(args []string) error {
 	}
 	defer db.Close(conn)
 
+	// 幂等补建增量索引（已存在时空操作；首次升级构建数秒）
+	start := time.Now()
+	if err := db.EnsureIndexes(conn); err != nil {
+		return err
+	}
+	if d := time.Since(start); d > time.Second {
+		log.Printf("索引升级完成（%s）", d.Round(time.Millisecond))
+	}
+
 	// 人物头像图片库：与主库同目录的 bgm_pic.db；
 	// API Key 读 config.json（同目录）或环境变量 BANGUMI_API_KEY，
 	// 未配置时功能停用（头像接口返回失败，前端回退字符头像）。

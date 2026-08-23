@@ -15,8 +15,9 @@ import (
 func (h *handler) searchSubjects(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
-		conds []string
-		args  []any
+		conds    []string
+		args     []any
+		fullScan bool // 过滤条件必须逐行求值（LIKE 回退/json_each），无法利用索引
 	)
 
 	if q != "" {
@@ -34,12 +35,14 @@ func (h *handler) searchSubjects(c *gin.Context) {
 					args = append(args, id)
 				}
 			} else {
+				fullScan = true
 				like := "%" + q + "%"
 				conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
 				args = append(args, like, like)
 			}
 		} else {
 			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
+			fullScan = true
 			like := "%" + q + "%"
 			conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
 			args = append(args, like, like)
@@ -79,10 +82,12 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		args = append(args, v)
 	}
 	if tag := strings.TrimSpace(c.Query("tag")); tag != "" {
+		fullScan = true
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(s.tags) je WHERE je.value->>'name' = ?)`)
 		args = append(args, tag)
 	}
 	if metaTag := strings.TrimSpace(c.Query("meta_tag")); metaTag != "" {
+		fullScan = true
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(s.meta_tags) mt WHERE mt.value = ?)`)
 		args = append(args, metaTag)
 	}
@@ -113,12 +118,26 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		orderBy = "s.id " + order
 	}
 
-	queryArgs := make([]any, 0, len(args)+2)
-	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, size, (page-1)*size)
+	queryArgs := append(args, size, (page-1)*size)
 
-	// COUNT(*) OVER() 将总数统计与数据页读取合并为一次扫描
-	rows, err := h.db.Query("SELECT "+subjectBriefCols+", COUNT(*) OVER() FROM subjects s"+where+" ORDER BY "+orderBy+" LIMIT ? OFFSET ?", queryArgs...)
+	// 计数与取数策略：
+	//   - 过滤条件可走索引时拆成两条查询——数据查询按主键序取满一页即提前终止，
+	//     COUNT(*) 仅扫描索引；避免 COUNT(*) OVER() 窗口函数强制整表物化
+	//     （无过滤时 67 万行全表扫描需数秒，拆分后 <20ms）。
+	//   - 过滤条件必须逐行求值（LIKE/json_each）时，两次扫描代价翻倍，
+	//     保留 COUNT(*) OVER() 合并为一次扫描更划算。
+	dataSQL := "SELECT " + subjectBriefCols + " FROM subjects s" + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
+	var totalPtr *int64
+	total := int64(0)
+	if fullScan {
+		dataSQL = "SELECT " + subjectBriefCols + ", COUNT(*) OVER() FROM subjects s" + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
+		totalPtr = &total
+	} else if err := h.db.QueryRow("SELECT COUNT(*) FROM subjects s"+where, args...).Scan(&total); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+
+	rows, err := h.db.Query(dataSQL, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
@@ -126,9 +145,8 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	defer rows.Close()
 
 	items := make([]*subjectBrief, 0, size)
-	var total int64
 	for rows.Next() {
-		item, err := h.scanSubjectBrief(rows, &total)
+		item, err := h.scanSubjectBrief(rows, totalPtr)
 		if err != nil {
 			fail(c, 500, err.Error())
 			return

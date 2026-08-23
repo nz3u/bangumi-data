@@ -49,8 +49,9 @@ type cvItem struct {
 func (h *handler) searchCharacters(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
-		conds []string
-		args  []any
+		conds    []string
+		args     []any
+		fullScan bool // LIKE 回退时过滤条件必须逐行求值
 	)
 	if q != "" {
 		if useFTS(q) {
@@ -66,11 +67,13 @@ func (h *handler) searchCharacters(c *gin.Context) {
 					args = append(args, id)
 				}
 			} else {
+				fullScan = true
 				conds = append(conds, "c.name LIKE ?")
 				args = append(args, "%"+q+"%")
 			}
 		} else {
 			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
+			fullScan = true
 			conds = append(conds, "c.name LIKE ?")
 			args = append(args, "%"+q+"%")
 		}
@@ -87,8 +90,21 @@ func (h *handler) searchCharacters(c *gin.Context) {
 	}
 
 	queryArgs := append(args, size, (page-1)*size)
-	// COUNT(*) OVER() 将总数统计与数据页读取合并为一次扫描
-	rows, err := h.db.Query(`SELECT c.id, c.name, c.role, c.collects, c.comments, COUNT(*) OVER()
+
+	// 计数与取数策略同 searchSubjects：可走索引时拆分查询避免全表物化，
+	// LIKE 回退场景保留 COUNT(*) OVER() 合并为一次扫描。
+	countCol := ""
+	var totalPtr *int64
+	total := int64(0)
+	if fullScan {
+		countCol = ", COUNT(*) OVER()"
+		totalPtr = &total
+	} else if err := h.db.QueryRow("SELECT COUNT(*) FROM characters c"+where, args...).Scan(&total); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+
+	rows, err := h.db.Query(`SELECT c.id, c.name, c.role, c.collects, c.comments`+countCol+`
 		FROM characters c`+where+` ORDER BY c.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -105,10 +121,13 @@ func (h *handler) searchCharacters(c *gin.Context) {
 		Comments int    `json:"comments"`
 	}
 	items := make([]characterBrief, 0, size)
-	var total int64
 	for rows.Next() {
 		var it characterBrief
-		if err := rows.Scan(&it.ID, &it.Name, &it.Role, &it.Collects, &it.Comments, &total); err != nil {
+		dest := []any{&it.ID, &it.Name, &it.Role, &it.Collects, &it.Comments}
+		if totalPtr != nil {
+			dest = append(dest, totalPtr)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}

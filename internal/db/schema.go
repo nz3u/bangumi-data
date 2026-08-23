@@ -125,8 +125,17 @@ CREATE INDEX IF NOT EXISTS idx_sc_character ON subject_characters(character_id);
 CREATE INDEX IF NOT EXISTS idx_pc_person    ON person_characters(person_id);
 CREATE INDEX IF NOT EXISTS idx_pc_character ON person_characters(character_id);
 CREATE INDEX IF NOT EXISTS idx_pc_subject   ON person_characters(subject_id);
+-- 覆盖索引：合作/角色类查询按 subject_id 展开时免回表（appear_eps 等宽列不触碰）
+CREATE INDEX IF NOT EXISTS idx_sp_subj_person ON subject_persons(subject_id, person_id);
+CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, person_id);
 CREATE INDEX IF NOT EXISTS idx_pr_person  ON person_relations(person_type, person_id);
 CREATE INDEX IF NOT EXISTS idx_pr_related ON person_relations(person_type, related_person_id);
+`
+
+// ensureSQL 已有数据库升级用的增量索引（serve 启动时幂等补建）。
+const ensureSQL = `
+CREATE INDEX IF NOT EXISTS idx_sp_subj_person ON subject_persons(subject_id, person_id);
+CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, person_id);
 `
 
 // ftsSQL 全文搜索虚拟表。trigram tokenizer 支持中文子串匹配（>=3 字符走索引）。
@@ -177,6 +186,12 @@ func FinalizeSchema(conn *sql.DB) error {
 		return err
 	}
 	return ExecMulti(conn, ftsPopulateSQL)
+}
+
+// EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。
+// 已存在时为空操作，仅首次升级需一次性构建开销。
+func EnsureIndexes(conn *sql.DB) error {
+	return ExecMulti(conn, ensureSQL)
 }
 
 // DropAllTables 删除全部表（用于全量重建）。
