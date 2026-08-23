@@ -11,15 +11,15 @@
   import { health, stats } from './lib/api.js'
 
   const tabs = [
-    { key: 'subjects', label: '条目搜索' },
-    { key: 'persons', label: '人物搜索' },
-    { key: 'characters', label: '角色搜索' },
     { key: 'collaborations', label: '人物合作' },
     { key: 'pairworks', label: '双人合作' },
-    { key: 'singleworks', label: '单人作品' }
+    { key: 'singleworks', label: '单人作品' },
+    { key: 'subjects', label: '条目搜索' },
+    { key: 'persons', label: '人物搜索' },
+    { key: 'characters', label: '角色搜索' }
   ]
 
-  let active = $state('subjects')
+  let active = $state('collaborations')
   let svc = $state(null)
   let st = $state(null)
   let svcError = $state('')
@@ -105,18 +105,18 @@
   <Tabs items={tabs} active={active} onchange={(k) => (active = k)} />
 
   <main class="mt-4">
-    {#if active === 'subjects'}
-      <SubjectsView />
-    {:else if active === 'persons'}
-      <PersonsView />
-    {:else if active === 'characters'}
-      <CharactersView />
-    {:else if active === 'collaborations'}
+    {#if active === 'collaborations'}
       <CollaborationsView />
     {:else if active === 'pairworks'}
       <PairWorksView />
-    {:else}
+    {:else if active === 'singleworks'}
       <SingleWorksView />
+    {:else if active === 'subjects'}
+      <SubjectsView />
+    {:else if active === 'persons'}
+      <PersonsView />
+    {:else}
+      <CharactersView />
     {/if}
   </main>
 
