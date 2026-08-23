@@ -187,10 +187,13 @@
   // ---- 前端快速搜索 ----
   // 搜索范围覆盖当前页全部展示内容：名称、类型、职业、简介、共同条目（标题/日期/类型/职位）。
   // 仅作用于当前页，不改变服务端分页与棋盘筛选。
+  // 命中判定先走原文子串，未命中再尝试拼音全拼/首字母匹配（如 dy→导演）。
   const visibleItems = $derived.by(() => {
     if (!data?.items) return null
     const q = filter.trim().toLowerCase()
     if (!q) return data.items
+    const hit = (text) =>
+      String(text).toLowerCase().includes(q) || !!PinyinMatch.match(String(text), q)
     const rowText = (col) =>
       [
         col.name,
@@ -200,8 +203,7 @@
         ...(col.subjects ?? []).flatMap((s) => [s.name_cn, s.name, s.date, s.type_name, ...(s.roles ?? [])])
       ]
         .join('\n')
-        .toLowerCase()
-    return data.items.filter((col) => rowText(col).includes(q))
+    return data.items.filter((col) => hit(rowText(col)))
   })
 </script>
 
@@ -475,7 +477,8 @@
             <input
               class="input max-w-md"
               type="search"
-              placeholder="快速筛选：名称 / 职业 / 简介 / 共同作品…"
+              placeholder="快速筛选：名称 / 职业 / 简介 / 共同作品…（支持拼音首字母）"
+              title="支持中文或拼音首字母，如 dy→导演"
               bind:value={filter}
             />
             {#if filter.trim()}

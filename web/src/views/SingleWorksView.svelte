@@ -1,6 +1,7 @@
 <script>
   import { getPersonRoles } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
+  import PinyinMatch from 'pinyin-match'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
 
@@ -76,21 +77,24 @@
   // ---- 前端快速筛选 ----
   // 搜索范围覆盖全部展示内容：分组名、职务、日期、标题（中文名/原名）、类型标签。
   // 分组名命中时保留整组，否则仅保留行内命中的作品；无命中的分组隐藏。
+  // 命中判定先走原文子串，未命中再尝试拼音全拼/首字母匹配（如 dy→导演）。
   const filtered = $derived.by(() => {
     if (!data || data.items.length === 0) return null
     const base = buildGroups(data.items)
     const q = filter.trim().toLowerCase()
     if (!q) return { ...base, matched: data.total }
+    const hit = (text) =>
+      String(text).toLowerCase().includes(q) || !!PinyinMatch.match(String(text), q)
     const rowTextOf = (w) =>
       [w.name_cn, w.name, w.date, w.type_name,
-        ...(w.roles ?? []).map((r) => r.text)].join('\n').toLowerCase()
+        ...(w.roles ?? []).map((r) => r.text)].join('\n')
     let matched = 0
     const seen = new Set()
     const groups = base.groups
       .map((g) =>
-        g.label.toLowerCase().includes(q)
+        hit(g.label)
           ? g
-          : { ...g, works: g.works.filter((w) => rowTextOf(w).includes(q)) }
+          : { ...g, works: g.works.filter((w) => hit(rowTextOf(w))) }
       )
       .filter((g) => g.works.length > 0)
     for (const g of groups) {
@@ -157,7 +161,8 @@
         <input
           class="input max-w-md"
           type="search"
-          placeholder="快速筛选：职位 / 标题 / 日期 / 类型 / 分组名…"
+          placeholder="快速筛选：职位 / 标题 / 日期 / 类型 / 分组名…（支持拼音首字母）"
+          title="支持中文或拼音首字母，如 dy→导演"
           bind:value={filter}
         />
         {#if filter.trim()}
