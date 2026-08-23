@@ -435,7 +435,7 @@
           {#if hasCollapsible}
             <button
               type="button"
-              class="inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+              class="ml-auto inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
               title={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
               aria-label={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
               onclick={toggleAllSubj}
@@ -514,6 +514,10 @@
                       <a href={`https://bgm.tv/person/${col.person_id}`} target="_blank" rel="noreferrer" class="font-medium text-sky-600 hover:underline dark:text-sky-400">{col.name}</a>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
+                        <a class="ml-auto"></a>
+                        {#if !subjExpanded(col.person_id)}
+                          <small class="text-[11px] text-neutral-400">前 {COLLAB_PREVIEW_N} / {col.subjects.length} 条</small>
+                        {/if}
                         <button
                           type="button"
                           class="inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sky-600 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
@@ -528,10 +532,7 @@
                           >
                             <path d="m6 9 6 6 6-6" />
                           </svg>
-                        </button>
-                        {#if !subjExpanded(col.person_id)}
-                          <small class="text-[11px] text-neutral-400">前 {COLLAB_PREVIEW_N} / {col.subjects.length} 条</small>
-                        {/if}
+                        </button>                        
                       {/if}
                     </h3>
                     <div class="mt-1 flex flex-wrap items-center gap-1">
@@ -543,7 +544,7 @@
                     {#if col.summary}
                       <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{col.summary}</p>
                     {/if}
-                    <div class="subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
+                    <div class="truncate subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each shownSubjects(col) as s (s.id)}
                         <span class="inline-flex max-w-full items-baseline gap-1">
                           <a
@@ -555,6 +556,7 @@
                           >{s.name_cn || s.name}</a>
                           {#if s.roles.length}
                             <small class="shrink-0 text-[11px] text-neutral-400">{s.roles.join(' / ')}</small>
+                            <!--small class="w-full min-w-0 truncate text-[11px] text-neutral-400">{s.roles.join(' / ')}</small-->
                           {/if}
                         </span>
                       {/each}
