@@ -68,14 +68,16 @@ func (h *handler) searchCharacters(c *gin.Context) {
 				}
 			} else {
 				fullScan = true
-				conds = append(conds, "c.name LIKE ?")
-				args = append(args, "%"+q+"%")
+				like := "%" + q + "%"
+				conds = append(conds, "(c.name LIKE ? OR c.name_cn LIKE ?)")
+				args = append(args, like, like)
 			}
 		} else {
 			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
 			fullScan = true
-			conds = append(conds, "c.name LIKE ?")
-			args = append(args, "%"+q+"%")
+			like := "%" + q + "%"
+			conds = append(conds, "(c.name LIKE ? OR c.name_cn LIKE ?)")
+			args = append(args, like, like)
 		}
 	}
 	if v, ok := parseIntQuery(c, "role"); ok {
@@ -104,7 +106,7 @@ func (h *handler) searchCharacters(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`SELECT c.id, c.name, c.role, c.collects, c.comments`+countCol+`
+	rows, err := h.db.Query(`SELECT c.id, c.name, c.name_cn, c.role, c.collects, c.comments`+countCol+`
 		FROM characters c`+where+` ORDER BY c.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -115,6 +117,7 @@ func (h *handler) searchCharacters(c *gin.Context) {
 	type characterBrief struct {
 		ID       int64  `json:"id"`
 		Name     string `json:"name"`
+		NameCN   string `json:"name_cn"`
 		Role     int    `json:"role"`
 		RoleName string `json:"role_name"`
 		Collects int    `json:"collects"`
@@ -123,7 +126,7 @@ func (h *handler) searchCharacters(c *gin.Context) {
 	items := make([]characterBrief, 0, size)
 	for rows.Next() {
 		var it characterBrief
-		dest := []any{&it.ID, &it.Name, &it.Role, &it.Collects, &it.Comments}
+		dest := []any{&it.ID, &it.Name, &it.NameCN, &it.Role, &it.Collects, &it.Comments}
 		if totalPtr != nil {
 			dest = append(dest, totalPtr)
 		}

@@ -99,10 +99,10 @@ bangumi version                                               版本号
 | `GET /api/health` | 健康检查 |
 | `GET /api/stats` | 各表行数统计 |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
-| `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选 |
+| `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |
-| `GET /api/persons/search?q=&type=` | 人物搜索 |
+| `GET /api/persons/search?q=&type=` | 人物搜索（q 匹配原名与 infobox 简体中文名） |
 | `GET /api/persons/:id` | 人物详情（含人物/角色关联） |
 | `GET /api/persons/:id/works?position=&subject_type=&page=&size=` | 人物参与的作品（按职位/类型筛选） |
 | `GET /api/persons/:id/collaborators?page=&size=` | 与「X」合作的人物（共同作品数降序） |
@@ -110,7 +110,7 @@ bangumi version                                               版本号
 | `GET /api/persons/:id/collaboration/positions` | 「人物合作」棋盘筛选职位标签：self = 当前人物在共同条目中的职位，other = 合作人物的职位（含 CV） |
 | `GET /api/persons/:id/collaboration/:other` | 双人合作：两人物共同参与的条目及双方职务（前端按职位双向合并分组展示） |
 | `GET /api/persons/:id/roles` | 「单人作品」页数据：人物参与的全部条目及职务（含 CV 出演，前端按职务分组） |
-| `GET /api/characters/search?q=&role=` | 角色搜索 |
+| `GET /api/characters/search?q=&role=` | 角色搜索（q 匹配原名与 infobox 简体中文名） |
 | `GET /api/characters/:id` | 角色详情（出演作品 + CV） |
 
 ### 搜索示例

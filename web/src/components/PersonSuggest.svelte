@@ -149,7 +149,7 @@
             onclick={() => pick(p)}
             onmousemove={() => (active = i)}
           >
-            <span class="min-w-0 flex-1 truncate">{p.name}</span>
+            <span class="min-w-0 flex-1 truncate">{p.name}{#if p.name_cn && p.name_cn !== p.name}（{p.name_cn}）{/if}</span>
             <small class="shrink-0 text-xs text-neutral-400">#{p.id}</small>
             <span class="chip shrink-0">{p.type_name}</span>
           </button>
