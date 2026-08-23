@@ -28,7 +28,7 @@
 
   // 缓存命中时解析+下载往往几十毫秒就完成，转圈一闪而过；
   // 这里保证转圈出现后至少停留 MIN_SPINNER_MS 再消失（不阻塞队列）。
-  const MIN_SPINNER_MS = 500
+  const MIN_SPINNER_MS = 300
   let spinnerOn = $state(false)
   let spinnerTimer = null
 
@@ -82,7 +82,7 @@
       alt={name}
       loading="lazy"
       decoding="async"
-      class={`size-full object-cover transition-opacity duration-300 ${imgState === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+      class={`relative block size-full object-cover transition-opacity duration-300 ${imgState === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
       onload={() => (imgState = 'loaded')}
       onerror={() => (imgState = 'broken')}
     />
