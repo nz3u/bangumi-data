@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS subjects (
 CREATE TABLE IF NOT EXISTS persons (
     id       INTEGER PRIMARY KEY,
     name     TEXT NOT NULL,
+    name_cn  TEXT NOT NULL DEFAULT '',
     type     INTEGER NOT NULL,
     career   TEXT NOT NULL DEFAULT '',
     infobox  TEXT NOT NULL DEFAULT '',
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS characters (
     id       INTEGER PRIMARY KEY,
     role     INTEGER NOT NULL,
     name     TEXT NOT NULL,
+    name_cn  TEXT NOT NULL DEFAULT '',
     infobox  TEXT NOT NULL DEFAULT '',
     summary  TEXT NOT NULL DEFAULT '',
     comments INTEGER NOT NULL DEFAULT 0,
@@ -99,6 +101,12 @@ CREATE TABLE IF NOT EXISTS person_relations (
     spoiler           INTEGER NOT NULL DEFAULT 0,
     ended             INTEGER NOT NULL DEFAULT 0
 );
+
+-- 一次性数据迁移的完成标记（如 persons/characters.name_cn 回填）。
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `
 
 // indexSQL 二级索引。在全部数据装载完成后统一创建（FinalizeSchema），
@@ -112,7 +120,9 @@ CREATE INDEX IF NOT EXISTS idx_subjects_score    ON subjects(score);
 CREATE INDEX IF NOT EXISTS idx_subjects_name     ON subjects(name);
 CREATE INDEX IF NOT EXISTS idx_subjects_name_cn  ON subjects(name_cn);
 CREATE INDEX IF NOT EXISTS idx_persons_name ON persons(name);
+CREATE INDEX IF NOT EXISTS idx_persons_name_cn ON persons(name_cn);
 CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
+CREATE INDEX IF NOT EXISTS idx_characters_name_cn ON characters(name_cn);
 CREATE INDEX IF NOT EXISTS idx_episodes_subject ON episodes(subject_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_subject_sort ON episodes(subject_id, sort);
 CREATE INDEX IF NOT EXISTS idx_sr_subject ON subject_relations(subject_id);
@@ -139,21 +149,36 @@ CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, p
 `
 
 // ftsSQL 全文搜索虚拟表。trigram tokenizer 支持中文子串匹配（>=3 字符走索引）。
+// 人物/角色的 name_cn 为 infobox 中提取的简体中文名。
 const ftsSQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS subjects_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
-    USING fts5(name, tokenize = 'trigram');
+    USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
-    USING fts5(name, tokenize = 'trigram');
+    USING fts5(name, name_cn, tokenize = 'trigram');
 `
 
 // ftsPopulateSQL 集合式填充 FTS：单条 INSERT...SELECT 在 SQLite 内部完成，
 // 避免 Go 侧逐行 Exec 的开销与 trigram 分词的往返成本。
 const ftsPopulateSQL = `
 INSERT INTO subjects_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM subjects;
-INSERT INTO persons_fts(rowid, name) SELECT id, name FROM persons;
-INSERT INTO characters_fts(rowid, name) SELECT id, name FROM characters;
+INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
+INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
+`
+
+// ftsPersonCharPopulateSQL 仅重建人物/角色 FTS 时的填充语句（升级迁移用）。
+const ftsPersonCharPopulateSQL = `
+INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
+INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
+`
+
+// ftsPersonCharSQL 仅人物/角色 FTS 的建表语句（升级迁移用）。
+const ftsPersonCharSQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
+    USING fts5(name, name_cn, tokenize = 'trigram');
+CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
+    USING fts5(name, name_cn, tokenize = 'trigram');
 `
 
 // DropAll 删除全部业务表（全量重建导入时调用）。
@@ -178,6 +203,7 @@ func InitSchema(conn *sql.DB) error {
 }
 
 // FinalizeSchema 数据装载完成后调用：创建二级索引、FTS 虚拟表并集合式填充。
+// 新导入的数据已含 name_cn 列，直接标记回填完成，避免 serve 启动时重复扫描。
 func FinalizeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, indexSQL); err != nil {
 		return err
@@ -185,7 +211,10 @@ func FinalizeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, ftsSQL); err != nil {
 		return err
 	}
-	return ExecMulti(conn, ftsPopulateSQL)
+	if err := ExecMulti(conn, ftsPopulateSQL); err != nil {
+		return err
+	}
+	return ExecMulti(conn, `INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('name_cn_backfilled', '1')`)
 }
 
 // EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。
