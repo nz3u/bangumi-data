@@ -1,0 +1,190 @@
+# 发布流水线：推送 v* 标签时触发
+#   1. 构建前端 (web/dist)
+#   2. 交叉编译全平台二进制（linux / windows / darwin × x86 / arm）
+#   3. 创建 GitHub Release 并附带压缩包与校验和
+#   4. 构建多架构 Docker 镜像并推送至 ghcr.io
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 创建 Release
+  packages: write   # 推送 ghcr.io 镜像
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------- 1. 前端构建（产物供各平台编译内嵌） ----------
+  frontend:
+    name: Build frontend (web/dist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci && build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload web/dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          retention-days: 3
+          if-no-files-found: error
+
+  # ---------- 2. 全平台交叉编译 ----------
+  binaries:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }   # Linux x86_64
+          - { goos: linux,   goarch: arm64 }   # Linux ARM64 (树莓派4/ARM服务器)
+          - { goos: linux,   goarch: arm   }   # Linux ARMv6/v7 (树莓派 Zero/3)
+          - { goos: linux,   goarch: '386' }   # Linux 32位
+          - { goos: windows, goarch: amd64 }   # Windows x64
+          - { goos: windows, goarch: arm64 }   # Windows on ARM
+          - { goos: windows, goarch: '386' }   # Windows 32位
+          - { goos: darwin,  goarch: amd64 }   # macOS Intel
+          - { goos: darwin,  goarch: arm64 }   # macOS Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download web/dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'                # 纯 Go SQLite，可任意交叉编译
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"  # v1.2.3 -> 1.2.3
+          EXT=''
+          [ "${GOOS}" = 'windows' ] && EXT='.exe'
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "bangumi-${GOOS}-${GOARCH}${EXT}" ./cmd/bangumi
+
+      - name: Package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          NAME="bangumi-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          EXT=''
+          [ "${GOOS}" = 'windows' ] && EXT='.exe'
+          mkdir -p "pkg/${NAME}"
+          cp "bangumi-${GOOS}-${GOARCH}${EXT}" README.md LICENSE "pkg/${NAME}/"
+          (
+            cd pkg
+            if [ "${GOOS}" = 'windows' ]; then
+              zip -q -r "${NAME}.zip" "${NAME}"
+            else
+              tar -czf "${NAME}.tar.gz" "${NAME}"
+            fi
+            rm -rf "${NAME}"
+          )
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: pkg/*
+          retention-days: 3
+          if-no-files-found: error
+
+  # ---------- 3. GitHub Release ----------
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate checksums
+        working-directory: dist
+        shell: bash
+        run: sha256sum * > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  # ---------- 4. Docker 多架构镜像 → ghcr.io ----------
+  docker:
+    name: Docker image (ghcr.io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}   # 自动转小写
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}   # 仅标签推送时发布；手动触发只构建验证
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
