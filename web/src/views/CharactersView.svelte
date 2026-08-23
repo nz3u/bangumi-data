@@ -80,6 +80,7 @@
             <tr>
               <th>ID</th>
               <th>名字</th>
+              <th>中文名</th>
               <th>类型</th>
               <th>收藏</th>
               <th>评论</th>
@@ -90,6 +91,7 @@
               <tr>
                 <td class="text-neutral-500">{it.id}</td>
                 <td class="max-w-64 truncate">{it.name}</td>
+                <td class="max-w-52 truncate">{it.name_cn || '—'}</td>
                 <td>{it.role_name}</td>
                 <td class="text-neutral-500 dark:text-neutral-400">{it.collects}</td>
                 <td class="text-neutral-500 dark:text-neutral-400">{it.comments}</td>
