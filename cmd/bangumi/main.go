@@ -175,8 +175,13 @@ func cmdServe(args []string) error {
 	if err := db.EnsureIndexes(conn); err != nil {
 		return err
 	}
+	// 幂等升级旧库：persons/characters 补建 name_cn 并回填 infobox 简体中文名，
+	// 必要时重建对应 FTS（仅首次升级执行，之后为空操作）
+	if err := db.UpgradeSchema(conn); err != nil {
+		return err
+	}
 	if d := time.Since(start); d > time.Second {
-		log.Printf("索引升级完成（%s）", d.Round(time.Millisecond))
+		log.Printf("索引/数据升级完成（%s）", d.Round(time.Millisecond))
 	}
 
 	// 人物头像图片库：与主库同目录的 bgm_pic.db；

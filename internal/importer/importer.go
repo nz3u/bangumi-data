@@ -24,6 +24,7 @@ import (
 
 	"bangumi-subject-go/internal/db"
 	"bangumi-subject-go/internal/model"
+	"bangumi-subject-go/internal/wiki"
 )
 
 // Stats 导入统计。
@@ -209,8 +210,8 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 }
 
 func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
-	insert, err := conn.Prepare(`INSERT INTO persons (id, name, type, career, infobox, summary, comments, collects)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	insert, err := conn.Prepare(`INSERT INTO persons (id, name, name_cn, type, career, infobox, summary, comments, collects)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -219,14 +220,15 @@ func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit i
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Person{} }, func(v any) error {
 		p := v.(*model.Person)
 		career, _ := json.Marshal(p.Career)
-		_, err := insert.Exec(p.ID, p.Name, p.Type, string(career), p.Infobox, p.Summary, p.Comments, p.Collects)
+		nameCN := wiki.ExtractNameCN(p.Infobox)
+		_, err := insert.Exec(p.ID, p.Name, nameCN, p.Type, string(career), p.Infobox, p.Summary, p.Comments, p.Collects)
 		return err
 	}, insert)
 }
 
 func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
-	insert, err := conn.Prepare(`INSERT INTO characters (id, role, name, infobox, summary, comments, collects)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	insert, err := conn.Prepare(`INSERT INTO characters (id, role, name, name_cn, infobox, summary, comments, collects)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -234,7 +236,8 @@ func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limi
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Character{} }, func(v any) error {
 		c := v.(*model.Character)
-		_, err := insert.Exec(c.ID, c.Role, c.Name, c.Infobox, c.Summary, c.Comments, c.Collects)
+		nameCN := wiki.ExtractNameCN(c.Infobox)
+		_, err := insert.Exec(c.ID, c.Role, c.Name, nameCN, c.Infobox, c.Summary, c.Comments, c.Collects)
 		return err
 	}, insert)
 }

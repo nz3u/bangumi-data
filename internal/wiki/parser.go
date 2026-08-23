@@ -102,6 +102,23 @@ func (ib *Infobox) Get(key string) string {
 	return ""
 }
 
+// ExtractNameCN 从 wiki 原始字符串中提取「简体中文名」字段值，
+// 无该字段或解析失败时返回空串（导入与升级回填共用）。
+func ExtractNameCN(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	ib, err := ParseInfobox(raw)
+	if err != nil {
+		return ""
+	}
+	cn := ib.Get("简体中文名")
+	if idx := strings.IndexAny(cn, "\r\n"); idx >= 0 {
+		cn = cn[:idx]
+	}
+	return strings.TrimSpace(cn)
+}
+
 // Parse 是 ParseInfobox 的简写。
 func Parse(raw string) (*Infobox, error) {
 	return ParseInfobox(raw)

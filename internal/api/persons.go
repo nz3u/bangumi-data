@@ -31,14 +31,16 @@ func (h *handler) searchPersons(c *gin.Context) {
 				}
 			} else {
 				fullScan = true
-				conds = append(conds, "p.name LIKE ?")
-				args = append(args, "%"+q+"%")
+				like := "%" + q + "%"
+				conds = append(conds, "(p.name LIKE ? OR p.name_cn LIKE ?)")
+				args = append(args, like, like)
 			}
 		} else {
 			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
 			fullScan = true
-			conds = append(conds, "p.name LIKE ?")
-			args = append(args, "%"+q+"%")
+			like := "%" + q + "%"
+			conds = append(conds, "(p.name LIKE ? OR p.name_cn LIKE ?)")
+			args = append(args, like, like)
 		}
 	}
 	if v, ok := parseIntQuery(c, "type"); ok {
@@ -67,7 +69,7 @@ func (h *handler) searchPersons(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`SELECT p.id, p.name, p.type, p.career, p.comments, p.collects`+countCol+`
+	rows, err := h.db.Query(`SELECT p.id, p.name, p.name_cn, p.type, p.career, p.comments, p.collects`+countCol+`
 		FROM persons p`+where+` ORDER BY p.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -78,6 +80,7 @@ func (h *handler) searchPersons(c *gin.Context) {
 	type personBrief struct {
 		ID       int64    `json:"id"`
 		Name     string   `json:"name"`
+		NameCN   string   `json:"name_cn"`
 		Type     int      `json:"type"`
 		TypeName string   `json:"type_name"`
 		Career   []string `json:"career"`
@@ -88,7 +91,7 @@ func (h *handler) searchPersons(c *gin.Context) {
 	for rows.Next() {
 		var it personBrief
 		var career string
-		dest := []any{&it.ID, &it.Name, &it.Type, &career, &it.Comments, &it.Collects}
+		dest := []any{&it.ID, &it.Name, &it.NameCN, &it.Type, &career, &it.Comments, &it.Collects}
 		if totalPtr != nil {
 			dest = append(dest, totalPtr)
 		}
