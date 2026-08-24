@@ -1,0 +1,79 @@
+# 持续集成：push 到 main 及所有 PR（含 Dependabot 升级 PR）自动构建与测试
+# 仅做验证，不自动合并；合并由维护者手动完成
+#
+# 手动跳过（仅对 PR 生效，push 到 main 始终运行）：
+#   1. 给 PR 添加标签：skip-ci
+#   2. 或在 PR 标题中加入标记：[skip ci] / [ci skip] / [skip actions] / [actions skip]
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 跳过条件：push 事件不跳过；PR 打了 skip-ci 标签或标题含跳过标记时不运行
+  backend:
+    name: Go build & test
+    if: >-
+      github.event_name == 'push' ||
+      (
+        !contains(github.event.pull_request.labels.*.name, 'skip-ci') &&
+        !contains(github.event.pull_request.title, '[skip ci]') &&
+        !contains(github.event.pull_request.title, '[ci skip]') &&
+        !contains(github.event.pull_request.title, '[skip actions]') &&
+        !contains(github.event.pull_request.title, '[actions skip]')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  frontend:
+    name: Frontend build
+    if: >-
+      github.event_name == 'push' ||
+      (
+        !contains(github.event.pull_request.labels.*.name, 'skip-ci') &&
+        !contains(github.event.pull_request.title, '[skip ci]') &&
+        !contains(github.event.pull_request.title, '[ci skip]') &&
+        !contains(github.event.pull_request.title, '[skip actions]') &&
+        !contains(github.event.pull_request.title, '[actions skip]')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build
+        working-directory: web
+        run: npm run build
