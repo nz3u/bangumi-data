@@ -4,19 +4,21 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"bangumi-subject-go/internal/wiki"
 )
 
 // characterDetail 角色详情。
 type characterDetail struct {
-	ID       int64  `json:"id"`
-	Role     int    `json:"role"`
-	RoleName string `json:"role_name"`
-	Name     string `json:"name"`
-	NameCN   string `json:"name_cn"`
-	Infobox  string `json:"infobox"`
-	Summary  string `json:"summary"`
-	Comments int    `json:"comments"`
-	Collects int    `json:"collects"`
+	ID       int64        `json:"id"`
+	Role     int          `json:"role"`
+	RoleName string       `json:"role_name"`
+	Name     string       `json:"name"`
+	NameCN   string       `json:"name_cn"`
+	Infobox  []wiki.Field `json:"infobox,omitempty"`
+	Summary  string       `json:"summary"`
+	Comments int          `json:"comments"`
+	Collects int          `json:"collects"`
 	// 出演作品
 	Subjects []characterSubjectItem `json:"subjects"`
 	// 声优/演员（person_characters 关联）
@@ -156,14 +158,18 @@ func (h *handler) getCharacter(c *gin.Context) {
 	}
 
 	d := characterDetail{Subjects: []characterSubjectItem{}, CVs: []cvItem{}, Relations: []personRelationItem{}}
+	var rawInfobox string
 	err := h.db.QueryRow(`SELECT id, role, name, name_cn, infobox, summary, comments, collects
 		FROM characters WHERE id = ?`, id).
-		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &d.Infobox, &d.Summary, &d.Comments, &d.Collects)
+		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &rawInfobox, &d.Summary, &d.Comments, &d.Collects)
 	if err != nil {
 		fail(c, 404, "角色不存在")
 		return
 	}
 	d.RoleName = h.cons.CharacterRoles[d.Role]
+	if ib, err := wiki.ParseInfobox(rawInfobox); err == nil {
+		d.Infobox = ib.Fields
+	}
 
 	// 出演作品
 	srows, err := h.db.Query(`SELECT s.id, s.name, s.name_cn, s.type, sc.type, sc."order", s.date, s.score

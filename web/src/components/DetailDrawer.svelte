@@ -1,13 +1,15 @@
 <script>
-  import { navigate } from 'svelte5-router'
   import { getSubject, getPerson, getCharacter, getPersonCollaborators } from '../lib/api.js'
-  import { fmtScore, fmtRank, fmtDate, fmtFavorite, careerCn } from '../lib/format.js'
+  import { careerCn } from '../lib/format.js'
   import Drawer from './Drawer.svelte'
-  import EntityPic from './EntityPic.svelte'
-  import { detailDrawer, closeDetail, detailHref, peekBrief } from '../lib/detail.svelte.js'
+  import SubjectDetail from './SubjectDetail.svelte'
+  import PersonDetail from './PersonDetail.svelte'
+  import CharacterDetail from './CharacterDetail.svelte'
+  import { detailDrawer, closeDetail, peekBrief } from '../lib/detail.svelte.js'
 
   // 全局唯一详情抽屉：依据锚点（#/subject@1 等）加载并渲染对应实体详情，
   // 锚点变化时原地替换内容；内部实体链接统一走锚点跳转。
+  // 各实体内容渲染拆分至 SubjectDetail / PersonDetail / CharacterDetail。
   const LABELS = { subject: '条目详情', person: '人物详情', character: '角色详情' }
   const FETCHERS = { subject: getSubject, person: getPerson, character: getCharacter }
   const COLLAB_SIZE = 10
@@ -72,7 +74,7 @@
       {#if kind === 'subject'}
         {#if head?.type_name}<span class="chip">{head.type_name}</span>{/if}
         {#if head?.platform_name}<span class="chip">{head.platform_name}</span>{/if}
-        {#if data?.detail?.series}<span class="chip">系列</span>{/if}
+        {#if view?.detail?.series}<span class="chip">系列</span>{/if}
         {#if head?.nsfw}<span class="chip text-red-600 dark:text-red-400">R18</span>{/if}
       {:else if kind === 'person'}
         {#if head?.type_name}<span class="chip">{head.type_name}</span>{/if}
@@ -91,186 +93,11 @@
       {:else if view.error}
         <p class="text-sm text-red-600 dark:text-red-400">详情加载失败：{view.error}</p>
       {:else if kind === 'subject'}
-        {@const d = view.detail}
-        <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-          <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
-              <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
-              <div><dt class="label">日期</dt><dd>{fmtDate(d.date)}</dd></div>
-              <div><dt class="label">评分</dt><dd class="text-amber-600 dark:text-amber-400">{fmtScore(d.score)}</dd></div>
-              <div><dt class="label">排名</dt><dd>{fmtRank(d.rank)}</dd></div>
-              <div><dt class="label">收藏</dt><dd>{fmtFavorite(d.favorite)}</dd></div>
-              <div><dt class="label">集数</dt><dd>{d.episode_count || '—'}</dd></div>
-            </dl>
-            <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={d.name}>原名：{d.name}</p>
-            <div class="mt-1.5 flex flex-wrap items-center gap-1">
-              <span class="text-xs text-neutral-500 dark:text-neutral-400">标签：</span>
-              {#each d.tags ?? [] as t}
-                <span class="chip">{t.name}</span>
-              {/each}
-            </div>
-            <div class="mt-1.5 flex flex-wrap items-center gap-1">
-              <span class="text-xs text-neutral-500 dark:text-neutral-400">Meta 标签：</span>
-              {#each d.meta_tags ?? [] as m}
-                <span class="chip">{m}</span>
-              {/each}
-            </div>
-          </section>
-          <EntityPic kind="subject" id={id} href={`https://bgm.tv/subject/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
-        </div>
-
-        <section class="mb-4">
-          <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
-          <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
-        </section>
-
-        {#if d.relations.length}
-          <section class="mb-4">
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联（{d.relations.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.relations ?? [] as r}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <span class="text-neutral-500">{r.relation_name}</span> →
-                  <span class="text-neutral-500">{r.related_type_name}</span>
-                  <a href={detailHref('subject', r.related_subject_id)} class="hover:underline">{r.related_name_cn || r.related_name}</a>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-
-        {#if d.staff.length}
-          <section class="mb-4">
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">制作人员（{d.staff.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.staff ?? [] as s}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <span class="text-neutral-500">{s.position_name}</span>
-                  <a href={detailHref('person', s.person_id)} class="hover:underline">{s.person_name}</a>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-
-        {#if d.characters.length}
-          <section>
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">角色（{d.characters.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.characters ?? [] as c}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <span class="text-neutral-500">{c.role_name}</span>
-                  <a href={detailHref('character', c.id)} class="hover:underline">{c.name}</a>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
+        <SubjectDetail d={view.detail} {id} />
       {:else if kind === 'person'}
-        {@const d = view.detail}
-        <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-          <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-5">
-              <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
-              <div><dt class="label">参与作品</dt><dd>{d.works_count || '—'}</dd></div>
-              <div><dt class="label">出演角色</dt><dd>{d.roles_count || '—'}</dd></div>
-              <div><dt class="label">评论</dt><dd>{d.comments}</dd></div>
-              <div><dt class="label">收藏</dt><dd>{d.collects}</dd></div>
-            </dl>
-            <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={d.name}>原名：{d.name}</p>
-          </section>
-          <EntityPic kind="person" id={id} href={`https://bgm.tv/person/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
-        </div>
-
-        <section class="mb-4">
-          <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
-          <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
-        </section>
-
-        {#if (d.collaborators ?? []).length > 0}
-          <section class="mb-4">
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              关联人物 / 角色（{d.collaborators_total ?? d.collaborators.length}）
-            </h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.collaborators as c (c.person_id)}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <a href={detailHref('person', c.person_id)} class="hover:underline">{c.name}</a>
-                  <small class="text-xs text-neutral-400">共同作品 x{c.count}</small>
-                </li>
-              {/each}
-            </ul>
-            <a
-              href={`/collaborations?id=${id}`}
-              class="mt-1 inline-block text-xs text-sky-600 hover:underline dark:text-sky-400"
-              onclick={(e) => { e.preventDefault(); closeDetail(); navigate(`/collaborations?pid=${id}`) }}
-            >
-              查看全部合作人物 →
-            </a>
-          </section>
-        {/if}
+        <PersonDetail d={view.detail} {id} />
       {:else}
-        {@const d = view.detail}
-        <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-          <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-              <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
-              <div><dt class="label">收藏</dt><dd>{d.collects}</dd></div>
-              <div><dt class="label">评论</dt><dd>{d.comments}</dd></div>
-              <div><dt class="label">出演作品数</dt><dd>{d.subjects.length || '—'}</dd></div>
-            </dl>
-            <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={d.name}>原名：{d.name}</p>
-          </section>
-          <EntityPic kind="character" id={id} href={`https://bgm.tv/character/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
-        </div>
-
-        <section class="mb-4">
-          <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
-          <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
-        </section>
-
-        {#if d.relations.length}
-          <section class="mb-4">
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联角色（{d.relations.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.relations ?? [] as r}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <span class="text-neutral-500">{r.relation_name}</span>
-                  <a href={detailHref('character', r.related_person_id)} class="hover:underline">{r.related_name || r.related_person_id}</a>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-
-        {#if d.subjects.length}
-          <section class="mb-4">
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">出演作品（{d.subjects.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.subjects ?? [] as s}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <span class="text-neutral-500">{s.date || '—'}</span>
-                  <a href={detailHref('subject', s.subject_id)} class="hover:underline">{s.name_cn || s.name}</a>
-                  {#if s.score > 0}<span class="text-amber-600 dark:text-amber-400">{fmtScore(s.score)}</span>{/if}
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
-
-        {#if d.cvs.length}
-          <section>
-            <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">声优 / 演员（{d.cvs.length}）</h4>
-            <ul class="space-y-0.5 text-sm">
-              {#each d.cvs ?? [] as c}
-                <li class="text-neutral-700 dark:text-neutral-300">
-                  <a href={detailHref('person', c.person_id)} class="hover:underline">{c.name}</a>
-                  {#if c.type_name}<span class="chip">{c.type_name}</span>{/if}
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
+        <CharacterDetail d={view.detail} {id} />
       {/if}
     </div>
   {/if}

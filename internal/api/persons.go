@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bangumi-subject-go/internal/model"
+	"bangumi-subject-go/internal/wiki"
 )
 
 // searchPersons 人物搜索。
@@ -126,18 +127,18 @@ type personRelationItem struct {
 // personDetail 人物详情。
 // 关联人物改由 /persons/:id/collaborators（人物合作）接口提供，前端抽屉直接引用。
 type personDetail struct {
-	ID        int64    `json:"id"`
-	Name      string   `json:"name"`
-	NameCN    string   `json:"name_cn"`
-	Type      int      `json:"type"`
-	TypeName  string   `json:"type_name"`
-	Career    []string `json:"career"`
-	Infobox   string   `json:"infobox"`
-	Summary   string   `json:"summary"`
-	Comments  int      `json:"comments"`
-	Collects  int      `json:"collects"`
-	Works     int64    `json:"works_count"`
-	Roles     int64    `json:"roles_count"`
+	ID        int64        `json:"id"`
+	Name      string       `json:"name"`
+	NameCN    string       `json:"name_cn"`
+	Type      int          `json:"type"`
+	TypeName  string       `json:"type_name"`
+	Career    []string     `json:"career"`
+	Infobox   []wiki.Field `json:"infobox,omitempty"`
+	Summary   string       `json:"summary"`
+	Comments  int          `json:"comments"`
+	Collects  int          `json:"collects"`
+	Works     int64        `json:"works_count"`
+	Roles     int64        `json:"roles_count"`
 }
 
 // getPerson 人物详情。关联人物/角色不再在此返回：
@@ -162,16 +163,18 @@ func (h *handler) getPerson(c *gin.Context) {
 	}
 
 	d := personDetail{
-		ID:        p.ID,
-		Name:      p.Name,
-		NameCN:    nameCN,
-		Type:      p.Type,
-		TypeName:  h.cons.PersonTypes[p.Type],
-		Career:    parseStrings(career),
-		Infobox:   p.Infobox,
-		Summary:   p.Summary,
-		Comments:  p.Comments,
-		Collects:  p.Collects,
+		ID:       p.ID,
+		Name:     p.Name,
+		NameCN:   nameCN,
+		Type:     p.Type,
+		TypeName: h.cons.PersonTypes[p.Type],
+		Career:   parseStrings(career),
+		Summary:  p.Summary,
+		Comments: p.Comments,
+		Collects: p.Collects,
+	}
+	if ib, err := wiki.ParseInfobox(p.Infobox); err == nil {
+		d.Infobox = ib.Fields
 	}
 
 	if err := h.db.QueryRow("SELECT COUNT(*) FROM subject_persons WHERE person_id = ?", id).Scan(&d.Works); err != nil {
