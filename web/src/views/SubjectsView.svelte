@@ -1,21 +1,12 @@
 <script>
   import { onMount } from 'svelte'
-  import { useLocation } from 'svelte5-router'
   import { searchSubjects } from '../lib/api.js'
-  import { loadConstants, platformsFor, enumList } from '../lib/constants.js'
+  import { loadConstants, platformsFor, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
-  import { parseQuery, pushSearch, intParam, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/url.js'
 
-  const BASE = '/subjects'
-  let cons = $state(null)
-  let types = $state([])
-  let loading = $state(false)
-  let error = $state('')
-  let result = $state(null)
-
-  let f = $state({
+  const DEFAULTS = {
     q: '',
     type: '',
     platform: '',
@@ -30,9 +21,15 @@
     sort: 'id',
     order: 'asc',
     size: 30
-  })
+  }
+  let cons = $state(null)
+  let types = $state([])
+  let loading = $state(false)
+  let error = $state('')
+  let result = $state(null)
 
-  const location = useLocation()
+  let f = $state({ ...DEFAULTS })
+
   const platforms = $derived(f.type ? platformsFor(cons, f.type) : [])
 
   const sortOptions = [
@@ -56,60 +53,17 @@
   onMount(async () => {
     cons = await loadConstants()
     types = enumList(cons.subject_types)
+    await doSearch({ ...f, page: 1 }) // 挂载即展示第 1 页（空条件 = 全量列表）
   })
 
-  // 搜索以地址栏查询串为唯一驱动：挂载、搜索、翻页、前进后退统一走此路径。
-  // 只读 $location.search，显式传参请求，避免依赖回环；签名不变（如仅弹窗锚点变化的
-  // 前进/后退）时跳过重复搜索。
-  let appliedSig = null
-  let appliedFormSig = ''
-  $effect(() => {
-    const sp = parseQuery($location.search)
-    const sig = sp.toString()
-    if (sig === appliedSig) return
-    appliedSig = sig
-
-    const p = {
-      q: sp.get('q') ?? '',
-      type: sp.get('type') ?? '',
-      platform: sp.get('platform') ?? '',
-      tag: sp.get('tag') ?? '',
-      metaTag: sp.get('meta_tag') ?? '',
-      rankMin: sp.get('rank_min') ?? '',
-      scoreMin: sp.get('score_min') ?? '',
-      dateFrom: sp.get('date_from') ?? '',
-      dateTo: sp.get('date_to') ?? '',
-      nsfw: sp.get('nsfw') ?? '',
-      series: sp.get('series') ?? '',
-      sort: sp.get('sort') || 'id',
-      order: sp.get('order') || 'asc',
-      page: intParam(sp, 'page', 1),
-      size: 30
-    }
-    Object.assign(f, {
-      q: p.q,
-      type: p.type,
-      platform: p.platform,
-      tag: p.tag,
-      metaTag: p.metaTag,
-      rankMin: p.rankMin,
-      scoreMin: p.scoreMin,
-      dateFrom: p.dateFrom,
-      dateTo: p.dateTo,
-      nsfw: p.nsfw,
-      series: p.series,
-      sort: p.sort,
-      order: p.order
-    })
-    appliedFormSig = formSig()
-    doSearch(p)
-  })
-
-  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
-  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。地址驱动的搜索（挂载/前进后退/
-  // 翻页/手动提交）会先更新快照，故不会误触发；输入回退到与快照一致则取消。
+  // 搜索由表单状态直接驱动：提交/翻页/重置时按当前表单发起请求。
   let autoTimer = null
   const formSig = () => JSON.stringify(f)
+  let appliedFormSig = formSig()
+
+  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
+  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。手动提交会先更新快照，故不会误触发；
+  // 输入回退到与快照一致则取消。
   $effect(() => {
     const sig = formSig()
     if (sig === appliedFormSig) return
@@ -134,38 +88,23 @@
     }
   }
 
-  // 当前表单 -> 查询参数（默认值不写入，保持地址简洁）
-  function formParams(extra = {}) {
-    const p = {
-      q: f.q,
-      type: f.type,
-      platform: f.platform,
-      tag: f.tag,
-      meta_tag: f.metaTag,
-      rank_min: f.rankMin,
-      score_min: f.scoreMin,
-      date_from: f.dateFrom,
-      date_to: f.dateTo,
-      nsfw: f.nsfw,
-      series: f.series
-    }
-    if (f.sort !== 'id') p.sort = f.sort
-    if (f.order !== 'asc') p.order = f.order
-    return { ...p, ...extra }
-  }
-
   function submit() {
     clearTimeout(autoTimer)
     autoTimer = null
-    pushSearch(BASE, formParams())
+    appliedFormSig = formSig()
+    doSearch({ ...f, page: 1 })
   }
 
   function resetForm() {
-    pushSearch(BASE, {})
+    clearTimeout(autoTimer)
+    autoTimer = null
+    Object.assign(f, DEFAULTS)
+    appliedFormSig = formSig()
+    doSearch({ ...DEFAULTS, page: 1 })
   }
 
   function changePage(p) {
-    pushSearch(BASE, formParams({ page: p }))
+    doSearch({ ...f, page: p })
   }
 </script>
 

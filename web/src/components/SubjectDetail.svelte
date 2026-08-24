@@ -1,6 +1,6 @@
 <script>
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
-  import { detailHref } from '../lib/detail.svelte.js'
+  import { openDetail } from '../lib/detail.svelte.js'
   import EntityPic from './EntityPic.svelte'
 
   let { d, id } = $props()
@@ -46,7 +46,7 @@
         <li class="text-neutral-700 dark:text-neutral-300">
           <span class="text-neutral-500">{r.relation_name}</span> →
           <span class="text-neutral-500">{r.related_type_name}</span>
-          <a href={detailHref('subject', r.related_subject_id)} class="hover:underline">{r.related_name_cn || r.related_name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('subject', r.related_subject_id)}>{r.related_name_cn || r.related_name}</button>
         </li>
       {/each}
     </ul>
@@ -60,7 +60,7 @@
       {#each d.staff ?? [] as s}
         <li class="text-neutral-700 dark:text-neutral-300">
           <span class="text-neutral-500">{s.position_name}</span>
-          <a href={detailHref('person', s.person_id)} class="hover:underline">{s.person_name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('person', s.person_id)}>{s.person_name}</button>
         </li>
       {/each}
     </ul>
@@ -74,7 +74,7 @@
       {#each d.characters ?? [] as c}
         <li class="text-neutral-700 dark:text-neutral-300">
           <span class="text-neutral-500">{c.role_name}</span>
-          <a href={detailHref('character', c.id)} class="hover:underline">{c.name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('character', c.id)}>{c.name}</button>
         </li>
       {/each}
     </ul>

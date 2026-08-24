@@ -10,7 +10,6 @@
   import PairWorksView from './views/PairWorksView.svelte'
   import SingleWorksView from './views/SingleWorksView.svelte'
   import DetailDrawer from './components/DetailDrawer.svelte'
-  import { initDetailDrawer, syncDetailFromHash } from './lib/detail.svelte.js'
   import { health, stats } from './lib/api.js'
 
   const tabs = [
@@ -69,8 +68,6 @@
 
   onMount(() => {
     const timer = setInterval(pollOnce, POLL_MS)
-    // 全局详情抽屉：解析初始锚点并监听锚点变化（#/subject@1 等）
-    const offDetail = initDetailDrawer()
 
     const onVisibility = () => {
       if (!document.hidden) pollOnce()
@@ -78,9 +75,7 @@
     document.addEventListener('visibilitychange', onVisibility)
 
     // 路由副作用：同步页面标题；未知路径（含尾斜杠等）替换为默认页。
-    // 路由跳转经 pushState 会剥离锚点且不触发 hashchange，这里统一按地址栏同步抽屉状态。
     const offRoute = listen(({ location }) => {
-      syncDetailFromHash()
       const p = location.pathname
       const normalized = p.length > 1 ? p.replace(/\/+$/, '') || '/' : p
       if (!knownPaths.has(normalized)) {
@@ -96,7 +91,6 @@
       clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
       offRoute()
-      offDetail()
     }
   })
 
@@ -143,7 +137,7 @@
     </main>
   </Router>
 
-  <!-- 全局唯一详情抽屉：由锚点驱动，任何页面内部跳转均复用此实例 -->
+  <!-- 全局唯一详情抽屉：由内部状态驱动（不写入地址栏），任何页面内打开均复用此实例 -->
   <DetailDrawer />
 
   <footer class="mt-8 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">

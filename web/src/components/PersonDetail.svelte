@@ -1,6 +1,6 @@
 <script>
-  import { navigate } from 'svelte5-router'
-  import { detailHref, closeDetail } from '../lib/detail.svelte.js'
+  import { closeDetail, openDetail } from '../lib/detail.svelte.js'
+  import { goToTab } from '../lib/nav.svelte.js'
   import EntityPic from './EntityPic.svelte'
   import InfoboxList from './InfoboxList.svelte'
 
@@ -36,17 +36,18 @@
     <ul class="space-y-0.5 text-sm">
       {#each d.collaborators as c (c.person_id)}
         <li class="text-neutral-700 dark:text-neutral-300">
-          <a href={detailHref('person', c.person_id)} class="hover:underline">{c.name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('person', c.person_id)}>{c.name}</button>
           <small class="text-xs text-neutral-400">共同作品 x{c.count}</small>
         </li>
       {/each}
     </ul>
-    <a
-      href={`/collaborations?id=${id}`}
-      class="mt-1 inline-block text-xs text-sky-600 hover:underline dark:text-sky-400"
-      onclick={(e) => { e.preventDefault(); closeDetail(); navigate(`/collaborations?id=${id}`) }}
+    <!-- 跨标签页跳转：内部传参（不写入地址栏），由合作页消费 -->
+    <button
+      type="button"
+      class="mt-1 inline-block cursor-pointer text-xs text-sky-600 hover:underline dark:text-sky-400"
+      onclick={() => { closeDetail(); goToTab('/collaborations', { id }) }}
     >
       查看全部合作人物 →
-    </a>
+    </button>
   </section>
 {/if}
