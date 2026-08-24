@@ -325,6 +325,7 @@
               <PersonAvatar
                 pid={p.id}
                 name={p.name}
+                size="grid"
                 class="size-12 rounded-full bg-sky-100 text-lg font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300"
               />
               <div>

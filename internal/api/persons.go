@@ -124,23 +124,24 @@ type personRelationItem struct {
 }
 
 // personDetail 人物详情。
+// 关联人物改由 /persons/:id/collaborators（人物合作）接口提供，前端抽屉直接引用。
 type personDetail struct {
-	ID        int64                `json:"id"`
-	Name      string               `json:"name"`
-	NameCN    string               `json:"name_cn"`
-	Type      int                  `json:"type"`
-	TypeName  string               `json:"type_name"`
-	Career    []string             `json:"career"`
-	Infobox   string               `json:"infobox"`
-	Summary   string               `json:"summary"`
-	Comments  int                  `json:"comments"`
-	Collects  int                  `json:"collects"`
-	Works     int64                `json:"works_count"`
-	Roles     int64                `json:"roles_count"`
-	Relations []personRelationItem `json:"relations"`
+	ID        int64    `json:"id"`
+	Name      string   `json:"name"`
+	NameCN    string   `json:"name_cn"`
+	Type      int      `json:"type"`
+	TypeName  string   `json:"type_name"`
+	Career    []string `json:"career"`
+	Infobox   string   `json:"infobox"`
+	Summary   string   `json:"summary"`
+	Comments  int      `json:"comments"`
+	Collects  int      `json:"collects"`
+	Works     int64    `json:"works_count"`
+	Roles     int64    `json:"roles_count"`
 }
 
-// getPerson 人物详情（含关联人物/角色）。
+// getPerson 人物详情。关联人物/角色不再在此返回：
+// 前端改用 /persons/:id/collaborators（人物合作）接口。
 func (h *handler) getPerson(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -171,7 +172,6 @@ func (h *handler) getPerson(c *gin.Context) {
 		Summary:   p.Summary,
 		Comments:  p.Comments,
 		Collects:  p.Collects,
-		Relations: []personRelationItem{},
 	}
 
 	if err := h.db.QueryRow("SELECT COUNT(*) FROM subject_persons WHERE person_id = ?", id).Scan(&d.Works); err != nil {
@@ -181,40 +181,6 @@ func (h *handler) getPerson(c *gin.Context) {
 	if err := h.db.QueryRow("SELECT COUNT(*) FROM person_characters WHERE person_id = ?", id).Scan(&d.Roles); err != nil {
 		fail(c, 500, err.Error())
 		return
-	}
-
-	// 人物关系（双向）：prsn 与 crt 分开查询
-	for _, pt := range []string{"prsn", "crt"} {
-		rows, err := h.db.Query(`SELECT pr.person_type, pr.person_id, pr.related_person_id, pr.relation_type, pr.spoiler, pr.ended,
-			COALESCE(p.name, ''), COALESCE(p.type, 0)
-			FROM person_relations pr
-			LEFT JOIN persons p ON p.id = pr.related_person_id
-			WHERE pr.person_type = ? AND pr.person_id = ?
-			UNION ALL
-			SELECT pr.person_type, pr.related_person_id, pr.person_id, pr.relation_type, pr.spoiler, pr.ended,
-			COALESCE(p.name, ''), COALESCE(p.type, 0)
-			FROM person_relations pr
-			LEFT JOIN persons p ON p.id = pr.person_id
-			WHERE pr.person_type = ? AND pr.related_person_id = ?`, pt, id, pt, id)
-		if err != nil {
-			fail(c, 500, err.Error())
-			return
-		}
-		for rows.Next() {
-			var it personRelationItem
-			var pname string
-			var ptype int
-			if err := rows.Scan(&it.PersonType, &it.PersonID, &it.RelatedPersonID, &it.RelationType,
-				&it.Spoiler, &it.Ended, &pname, &ptype); err != nil {
-				fail(c, 500, err.Error())
-				return
-			}
-			it.RelatedName = pname
-			it.RelatedType = ptype
-			it.RelationName = h.cons.PersonRelationCN(pt, it.RelationType)
-			d.Relations = append(d.Relations, it)
-		}
-		rows.Close()
 	}
 
 	respOK(c, d)
