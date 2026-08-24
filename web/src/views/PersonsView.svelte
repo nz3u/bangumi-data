@@ -91,8 +91,8 @@
           <tbody>
             {#each result.items as it (it.id)}
               <tr>
-                <td class="text-neutral-500">{it.id}</td>
-                <td class="max-w-64 truncate">{it.name}</td>
+                <td class="text-neutral-500"><a href={`https://bgm.tv/person/${it.id}`} target="_blank" rel="noreferrer" class="hover:underline">{it.id}</a></td>
+                <td class="max-w-64 truncate"><a href={`https://bgm.tv/person/${it.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">{it.name}</a></td>
                 <td class="max-w-52 truncate">{it.name_cn || '—'}</td>
                 <td>{it.type_name}</td>
                 <td>
