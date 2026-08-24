@@ -1,6 +1,6 @@
 <script>
   import { closeDetail, openDetail } from '../lib/detail.svelte.js'
-  import { goToTab } from '../lib/nav.svelte.js'
+  import { goToTab } from '../lib/nav.js'
   import EntityPic from './EntityPic.svelte'
   import InfoboxList from './InfoboxList.svelte'
 
@@ -41,11 +41,12 @@
         </li>
       {/each}
     </ul>
-    <!-- 跨标签页跳转：内部传参（不写入地址栏），由合作页消费 -->
+    <!-- 跨标签页跳转：内部传参（不写入地址栏），由合作页消费。
+         注意：必须先捕获 id 再 closeDetail()——id 派生自 detailDrawer，关闭后即变 null。 -->
     <button
       type="button"
       class="mt-1 inline-block cursor-pointer text-xs text-sky-600 hover:underline dark:text-sky-400"
-      onclick={() => { closeDetail(); goToTab('/collaborations', { id }) }}
+      onclick={() => { const pid = id; closeDetail(); goToTab('/collaborations', { id: pid }) }}
     >
       查看全部合作人物 →
     </button>

@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
@@ -6,7 +7,7 @@
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
-  import { consumeNav } from '../lib/nav.svelte.js'
+  import { onNavParams } from '../lib/nav.js'
 
   const BASE = '/collaborations'
 
@@ -107,15 +108,16 @@
   }
 
   // 跨标签页内部传参：其他页面（如人物详情抽屉）跳转过来时携带目标人物 ID。
-  // 挂载时消费在途参数；停留本页期间再次收到跳转时因 seq 变化重新消费。
-  $effect(() => {
-    const params = consumeNav(BASE)
-    const pid = Number(params?.id ?? 0)
-    if (!pid || pid <= 0 || pid === currentPid) return
-    pidInput = String(pid)
-    pidSel = null
-    search(pid)
-  })
+  // 挂载即注册处理器并领取在途参数；停留本页期间收到跳转则被直接调用。
+  onMount(() =>
+    onNavParams(BASE, (params) => {
+      const pid = Number(params?.id ?? 0)
+      if (!pid || pid <= 0 || pid === currentPid) return
+      pidInput = String(pid)
+      pidSel = null
+      search(pid)
+    })
+  )
 
   // 点击棋盘标签：切换选中并自动重新请求（回到第 1 页）
   function toggleTag(side, key) {
