@@ -12,6 +12,7 @@ type characterDetail struct {
 	Role     int    `json:"role"`
 	RoleName string `json:"role_name"`
 	Name     string `json:"name"`
+	NameCN   string `json:"name_cn"`
 	Infobox  string `json:"infobox"`
 	Summary  string `json:"summary"`
 	Comments int    `json:"comments"`
@@ -153,9 +154,9 @@ func (h *handler) getCharacter(c *gin.Context) {
 	}
 
 	d := characterDetail{Subjects: []characterSubjectItem{}, CVs: []cvItem{}}
-	err := h.db.QueryRow(`SELECT id, role, name, infobox, summary, comments, collects
+	err := h.db.QueryRow(`SELECT id, role, name, name_cn, infobox, summary, comments, collects
 		FROM characters WHERE id = ?`, id).
-		Scan(&d.ID, &d.Role, &d.Name, &d.Infobox, &d.Summary, &d.Comments, &d.Collects)
+		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &d.Infobox, &d.Summary, &d.Comments, &d.Collects)
 	if err != nil {
 		fail(c, 404, "角色不存在")
 		return

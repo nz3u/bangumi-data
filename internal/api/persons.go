@@ -127,6 +127,7 @@ type personRelationItem struct {
 type personDetail struct {
 	ID        int64                `json:"id"`
 	Name      string               `json:"name"`
+	NameCN    string               `json:"name_cn"`
 	Type      int                  `json:"type"`
 	TypeName  string               `json:"type_name"`
 	Career    []string             `json:"career"`
@@ -148,11 +149,12 @@ func (h *handler) getPerson(c *gin.Context) {
 	}
 
 	var (
-		p      model.Person
-		career string
+		p           model.Person
+		career      string
+		nameCN      string
 	)
-	err := h.db.QueryRow(`SELECT id, name, type, career, infobox, summary, comments, collects
-		FROM persons WHERE id = ?`, id).Scan(&p.ID, &p.Name, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
+	err := h.db.QueryRow(`SELECT id, name, name_cn, type, career, infobox, summary, comments, collects
+		FROM persons WHERE id = ?`, id).Scan(&p.ID, &p.Name, &nameCN, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
 	if err != nil {
 		fail(c, 404, "人物不存在")
 		return
@@ -161,6 +163,7 @@ func (h *handler) getPerson(c *gin.Context) {
 	d := personDetail{
 		ID:        p.ID,
 		Name:      p.Name,
+		NameCN:    nameCN,
 		Type:      p.Type,
 		TypeName:  h.cons.PersonTypes[p.Type],
 		Career:    parseStrings(career),
