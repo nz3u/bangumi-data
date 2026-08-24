@@ -3,7 +3,8 @@
 </script>
 
 {#if fields.length > 0}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="资料">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">资料</h4>
     <ul class="space-y-0.5 text-sm">
       {#each fields as f}

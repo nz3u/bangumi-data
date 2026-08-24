@@ -7,7 +7,7 @@
   let { d, id } = $props()
 </script>
 
-<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
     <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
@@ -22,13 +22,15 @@
 
 <InfoboxList fields={d.infobox ?? []} />
 
-<section class="mb-4">
+<section class="mb-4" data-sec-label="简介">
+  <div class="divider-short"></div>
   <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
   <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
 </section>
 
 {#if d.relations.length}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="关联角色">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联角色（{d.relations.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.relations ?? [] as r}
@@ -42,7 +44,8 @@
 {/if}
 
 {#if d.subjects.length}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="出演作品">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">出演作品（{d.subjects.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.subjects ?? [] as s}
@@ -57,7 +60,8 @@
 {/if}
 
 {#if d.cvs.length}
-  <section>
+  <section data-sec-label="声优 / 演员">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">声优 / 演员（{d.cvs.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.cvs ?? [] as c}

@@ -6,7 +6,7 @@
   let { d, id } = $props()
 </script>
 
-<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
     <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
@@ -33,13 +33,15 @@
   <EntityPic kind="subject" {id} href={`https://bgm.tv/subject/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
 </div>
 
-<section class="mb-4">
+<section class="mb-4" data-sec-label="简介">
+  <div class="divider-short"></div>
   <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
   <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
 </section>
 
 {#if d.relations.length}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="关联">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联（{d.relations.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.relations ?? [] as r}
@@ -54,7 +56,8 @@
 {/if}
 
 {#if d.staff.length}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="制作人员">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">制作人员（{d.staff.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.staff ?? [] as s}
@@ -68,7 +71,8 @@
 {/if}
 
 {#if d.characters.length}
-  <section>
+  <section data-sec-label="角色">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">角色（{d.characters.length}）</h4>
     <ul class="space-y-0.5 text-sm">
       {#each d.characters ?? [] as c}

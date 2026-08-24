@@ -7,7 +7,7 @@
   let { d, id } = $props()
 </script>
 
-<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
     <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-5">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
@@ -23,13 +23,15 @@
 
 <InfoboxList fields={d.infobox ?? []} />
 
-<section class="mb-4">
+<section class="mb-4" data-sec-label="简介">
+  <div class="divider-short"></div>
   <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
   <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
 </section>
 
 {#if (d.collaborators ?? []).length > 0}
-  <section class="mb-4">
+  <section class="mb-4" data-sec-label="关联人物 / 角色">
+    <div class="divider-short"></div>
     <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
       关联人物 / 角色（{d.collaborators_total ?? d.collaborators.length}）
     </h4>
