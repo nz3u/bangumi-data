@@ -10,6 +10,7 @@
   //   父组件提交逻辑仍使用 ID；未选中直接回车则走原生表单提交（纯数字可用）。
   // - 建议中出现「显示名完全相同」的多个人物（常见中文姓名重名，如“刘畅”）时，
   //   列表顶部展示提示行；点选或回车确认后跳转人物搜索页并按该名字发起搜索。
+  // - 建议加载后默认高亮第一行（有重名提示时即提示行），回车可直接确认。
   let {
     inputId,
     placeholder = '人物 ID 或名字',
@@ -27,19 +28,29 @@
   let active = $state(-1)
   let pickedName = '' // 当前 pid 对应的显示名；文本被手动改掉后失效
 
+  let listEl = $state(null) // 建议列表容器（内部滚动）
+
   let timer = null
   let reqSeq = 0 // 过期响应保护
 
   // 是否存在重名建议：原名相同，或非空中文名相同（如“刘畅”的多位同名人名）
-  const hasDup = $derived.by(() => {
+  function dupExists(list) {
     const count = new Map()
-    for (const p of items) {
+    for (const p of list) {
       if (p.name) count.set(p.name, (count.get(p.name) ?? 0) + 1)
       if (p.name_cn && p.name_cn !== p.name) count.set(p.name_cn, (count.get(p.name_cn) ?? 0) + 1)
     }
     for (const c of count.values()) if (c > 1) return true
     return false
-  })
+  }
+
+  const hasDup = $derived(dupExists(items))
+
+  // 建议加载后的默认高亮：第一行。存在重名提示时第一行即提示行（-1），
+  // 否则为第一个人物（0）；如此回车可直接确认第一行，无需先按方向键。
+  function resetActive(list) {
+    active = dupExists(list) ? -1 : 0
+  }
 
   function digitsOf(v) {
     const t = String(v ?? '').trim()
@@ -102,7 +113,7 @@
         if (merged.length >= LIMIT) break
       }
       items = merged
-      active = -1
+      resetActive(merged)
       open = merged.length > 0
     } catch {
       if (seq === reqSeq) {
@@ -125,19 +136,34 @@
     onpick?.(p)
   }
 
+  // 高亮项变化时将其滚动进可视范围：自定义列表框不像原生焦点那样自动滚动，
+  // 键盘移出可视区（尤其有重名提示行撑高列表时）会导致选中行不可见。
+  $effect(() => {
+    if (!open || !listEl) return
+    void active
+    const el = listEl.querySelector('li[aria-selected="true"]')
+    if (!el) return
+    const lr = listEl.getBoundingClientRect()
+    const er = el.getBoundingClientRect()
+    if (er.top < lr.top) listEl.scrollTop -= lr.top - er.top
+    else if (er.bottom > lr.bottom) listEl.scrollTop += er.bottom - lr.bottom
+  })
+
   function onKeydown(e) {
     if (e.key === 'Escape') {
       open = false
       return
     }
     if (!open || items.length === 0) return // 其余情况交还默认行为（如表单提交）
-    // 组合索引：c===0 为重名提示行（active=-1），c>=1 对应 items[c-1]
-    const total = (hasDup ? 1 : 0) + items.length
+    // 组合索引：有重名提示时 c===0 为提示行（active=-1）、c>=1 对应 items[c-1]；
+    // 无提示时 c 直接对应 items 下标，在首尾间循环。
+    const total = items.length + (hasDup ? 1 : 0)
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      let c = active < 0 ? 0 : active + 1
-      c = (c + (e.key === 'ArrowDown' ? 1 : -1) + total) % total
-      active = c === 0 ? -1 : c - 1
+      const dir = e.key === 'ArrowDown' ? 1 : -1
+      let c = hasDup ? (active < 0 ? 0 : active + 1) : Math.max(active, 0)
+      c = (c + dir + total) % total
+      active = hasDup ? (c === 0 ? -1 : c - 1) : c
     } else if (e.key === 'Enter' && active >= 0) {
       e.preventDefault() // 拦截表单提交，改走建议选中流程
       pick(items[active])
@@ -165,6 +191,7 @@
   />
   {#if open && items.length > 0}
     <ul
+      bind:this={listEl}
       class="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
       role="listbox"
       aria-label="人物搜索建议"
