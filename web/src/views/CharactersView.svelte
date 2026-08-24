@@ -5,7 +5,7 @@
   import { loadConstants, enumList } from '../lib/constants.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
-  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
+  import { parseQuery, pushSearch, intParam, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/url.js'
 
   const BASE = '/characters'
   let cons = $state(null)
@@ -25,6 +25,7 @@
 
   // 搜索以地址栏查询串为唯一驱动（q/role/page）；签名不变时跳过重复搜索
   let appliedSig = null
+  let appliedFormSig = ''
   $effect(() => {
     const sp = parseQuery($location.search)
     const sig = sp.toString()
@@ -39,7 +40,24 @@
     }
     f.q = p.q
     f.role = p.role
+    appliedFormSig = formSig()
     doSearch(p)
+  })
+
+  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
+  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。地址驱动的搜索（挂载/前进后退/
+  // 翻页/手动提交）会先更新快照，故不会误触发；输入回退到与快照一致则取消。
+  let autoTimer = null
+  const formSig = () => JSON.stringify(f)
+  $effect(() => {
+    const sig = formSig()
+    if (sig === appliedFormSig) return
+    clearTimeout(autoTimer)
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      submit()
+    }, AUTO_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(autoTimer)
   })
 
   async function doSearch(p) {
@@ -56,6 +74,8 @@
   }
 
   function submit() {
+    clearTimeout(autoTimer)
+    autoTimer = null
     pushSearch(BASE, { q: f.q, role: f.role })
   }
 

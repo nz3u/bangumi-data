@@ -7,6 +7,10 @@ import { navigate } from 'svelte5-router'
 // - 用户触发搜索/翻页时把表单参数写回地址栏（产生历史记录）。
 // 弹窗锚点（#/subject@1 等）仅作用于 hash，与本机制互不影响。
 
+// 条目/人物/角色三个搜索标签页的输入停顿自动搜索间隔：
+// 表单相对最近一次已执行的搜索快照有任何变更后，静默该时长即自动提交。
+export const AUTO_SEARCH_DEBOUNCE_MS = 1000
+
 export function parseQuery(search) {
   return new URLSearchParams(String(search ?? '').replace(/^\?/, ''))
 }
