@@ -1,9 +1,13 @@
 <script>
+  import { useLocation } from 'svelte5-router'
   import { getPersonRoles } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
+
+  const BASE = '/singleworks'
 
   let idInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -22,6 +26,22 @@
     const m = String(v ?? '').trim().match(/\d+/)
     return m ? Number(m[0]) : NaN
   }
+
+  const location = useLocation()
+
+  // 加载以地址栏查询串为唯一驱动（id 为人物 ID）。
+  // 挂载直达 /singleworks?id=1、搜索写回地址、前进后退均走此路径；
+  // 签名不变时跳过重复加载。
+  let loadedId = ''
+  $effect(() => {
+    const sp = parseQuery($location.search)
+    const pid = intParam(sp, 'id')
+    if (!pid || String(pid) === loadedId) return
+    loadedId = String(pid)
+    idInput = String(pid)
+    pidSel = null
+    load(pid)
+  })
 
   async function load(pid) {
     loading = true
@@ -47,7 +67,8 @@
       data = null
       return
     }
-    load(pid)
+    // 写回地址栏，由查询串驱动的 effect 统一加载
+    pushSearch(BASE, { id: pid })
   }
 
   // ---- 前端按职务分组 ----

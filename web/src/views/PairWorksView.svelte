@@ -1,9 +1,13 @@
 <script>
+  import { useLocation } from 'svelte5-router'
   import { getPairCollaboration } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
+
+  const BASE = '/pairworks'
 
   let idAInput = $state('')
   let idBInput = $state('')
@@ -29,6 +33,27 @@
     const m = String(v ?? '').trim().match(/\d+/)
     return m ? Number(m[0]) : NaN
   }
+
+  const location = useLocation()
+
+  // 加载以地址栏查询串为唯一驱动（a/b 为两个人物 ID）。
+  // 挂载直达 /pairworks?a=1&b=2、搜索写回地址、前进后退均走此路径；
+  // 签名不变时跳过重复加载。
+  let loadedKey = ''
+  $effect(() => {
+    const sp = parseQuery($location.search)
+    const a = intParam(sp, 'a')
+    const b = intParam(sp, 'b')
+    if (!a || !b || a === b) return
+    const key = `${a}-${b}`
+    if (key === loadedKey) return
+    loadedKey = key
+    idAInput = String(a)
+    idBInput = String(b)
+    aSel = null
+    bSel = null
+    load(a, b)
+  })
 
   async function load(a, b) {
     loading = true
@@ -62,7 +87,8 @@
       data = null
       return
     }
-    load(a, b)
+    // 写回地址栏，由查询串驱动的 effect 统一加载
+    pushSearch(BASE, { a, b })
   }
 
   // 职位标签统计：CV 各角色归并为一项（key 'cv'），其余以职务文本为 key，

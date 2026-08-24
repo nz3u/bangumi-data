@@ -1,31 +1,54 @@
 <script>
   import { onMount } from 'svelte'
+  import { useLocation } from 'svelte5-router'
   import { searchPersons } from '../lib/api.js'
   import { loadConstants, enumList } from '../lib/constants.js'
   import { careerCn } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
+  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
 
+  const BASE = '/persons'
   let cons = $state(null)
   let types = $state([])
   let loading = $state(false)
   let error = $state('')
   let result = $state(null)
 
-  let f = $state({ q: '', type: '', page: 1, size: 30 })
+  let f = $state({ q: '', type: '' })
+
+  const location = useLocation()
 
   onMount(async () => {
     cons = await loadConstants()
     types = enumList(cons.person_types)
-    await doSearch()
   })
 
-  async function doSearch() {
+  // 搜索以地址栏查询串为唯一驱动（q/type/page）；签名不变时跳过重复搜索
+  let appliedSig = null
+  $effect(() => {
+    const sp = parseQuery($location.search)
+    const sig = sp.toString()
+    if (sig === appliedSig) return
+    appliedSig = sig
+
+    const p = {
+      q: sp.get('q') ?? '',
+      type: sp.get('type') ?? '',
+      page: intParam(sp, 'page', 1),
+      size: 30
+    }
+    f.q = p.q
+    f.type = p.type
+    doSearch(p)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchPersons(f)
+      result = await searchPersons(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -34,13 +57,12 @@
   }
 
   function submit() {
-    f.page = 1
-    doSearch()
+    pushSearch(BASE, { q: f.q, type: f.type })
   }
 
   function changePage(p) {
-    f.page = p
-    doSearch()
+    if (!result) return
+    pushSearch(BASE, { q: f.q, type: f.type, page: p })
   }
 </script>
 

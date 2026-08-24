@@ -42,9 +42,9 @@
       {/each}
     </ul>
     <a
-      href={`/collaborations?pid=${id}`}
+      href={`/collaborations?id=${id}`}
       class="mt-1 inline-block text-xs text-sky-600 hover:underline dark:text-sky-400"
-      onclick={(e) => { e.preventDefault(); closeDetail(); navigate(`/collaborations?pid=${id}`) }}
+      onclick={(e) => { e.preventDefault(); closeDetail(); navigate(`/collaborations?id=${id}`) }}
     >
       查看全部合作人物 →
     </a>

@@ -1,11 +1,14 @@
 <script>
   import { onMount } from 'svelte'
+  import { useLocation } from 'svelte5-router'
   import { searchSubjects } from '../lib/api.js'
   import { loadConstants, platformsFor, enumList } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
+  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
 
+  const BASE = '/subjects'
   let cons = $state(null)
   let types = $state([])
   let loading = $state(false)
@@ -28,8 +31,8 @@
     order: 'asc',
     size: 30
   })
-  let page = $state(1)
 
+  const location = useLocation()
   const platforms = $derived(f.type ? platformsFor(cons, f.type) : [])
 
   const sortOptions = [
@@ -53,15 +56,59 @@
   onMount(async () => {
     cons = await loadConstants()
     types = enumList(cons.subject_types)
-    await doSearch()
   })
 
-  async function doSearch() {
+  // 搜索以地址栏查询串为唯一驱动：挂载、搜索、翻页、前进后退统一走此路径。
+  // 只读 $location.search，显式传参请求，避免依赖回环；签名不变（如仅弹窗锚点变化的
+  // 前进/后退）时跳过重复搜索。
+  let appliedSig = null
+  $effect(() => {
+    const sp = parseQuery($location.search)
+    const sig = sp.toString()
+    if (sig === appliedSig) return
+    appliedSig = sig
+
+    const p = {
+      q: sp.get('q') ?? '',
+      type: sp.get('type') ?? '',
+      platform: sp.get('platform') ?? '',
+      tag: sp.get('tag') ?? '',
+      metaTag: sp.get('meta_tag') ?? '',
+      rankMin: sp.get('rank_min') ?? '',
+      scoreMin: sp.get('score_min') ?? '',
+      dateFrom: sp.get('date_from') ?? '',
+      dateTo: sp.get('date_to') ?? '',
+      nsfw: sp.get('nsfw') ?? '',
+      series: sp.get('series') ?? '',
+      sort: sp.get('sort') || 'id',
+      order: sp.get('order') || 'asc',
+      page: intParam(sp, 'page', 1),
+      size: 30
+    }
+    Object.assign(f, {
+      q: p.q,
+      type: p.type,
+      platform: p.platform,
+      tag: p.tag,
+      metaTag: p.metaTag,
+      rankMin: p.rankMin,
+      scoreMin: p.scoreMin,
+      dateFrom: p.dateFrom,
+      dateTo: p.dateTo,
+      nsfw: p.nsfw,
+      series: p.series,
+      sort: p.sort,
+      order: p.order
+    })
+    doSearch(p)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchSubjects({ ...f, page })
+      result = await searchSubjects(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -69,32 +116,36 @@
     }
   }
 
+  // 当前表单 -> 查询参数（默认值不写入，保持地址简洁）
+  function formParams(extra = {}) {
+    const p = {
+      q: f.q,
+      type: f.type,
+      platform: f.platform,
+      tag: f.tag,
+      meta_tag: f.metaTag,
+      rank_min: f.rankMin,
+      score_min: f.scoreMin,
+      date_from: f.dateFrom,
+      date_to: f.dateTo,
+      nsfw: f.nsfw,
+      series: f.series
+    }
+    if (f.sort !== 'id') p.sort = f.sort
+    if (f.order !== 'asc') p.order = f.order
+    return { ...p, ...extra }
+  }
+
   function submit() {
-    page = 1
-    doSearch()
+    pushSearch(BASE, formParams())
   }
 
   function resetForm() {
-    f.q = ''
-    f.type = ''
-    f.platform = ''
-    f.tag = ''
-    f.metaTag = ''
-    f.rankMin = ''
-    f.scoreMin = ''
-    f.dateFrom = ''
-    f.dateTo = ''
-    f.nsfw = ''
-    f.series = ''
-    f.sort = 'id'
-    f.order = 'asc'
-    page = 1
-    doSearch()
+    pushSearch(BASE, {})
   }
 
   function changePage(p) {
-    page = p
-    doSearch()
+    pushSearch(BASE, formParams({ page: p }))
   }
 </script>
 

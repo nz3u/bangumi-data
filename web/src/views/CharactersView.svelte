@@ -1,30 +1,53 @@
 <script>
   import { onMount } from 'svelte'
+  import { useLocation } from 'svelte5-router'
   import { searchCharacters } from '../lib/api.js'
   import { loadConstants, enumList } from '../lib/constants.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
+  import { parseQuery, pushSearch, intParam } from '../lib/url.js'
 
+  const BASE = '/characters'
   let cons = $state(null)
   let roles = $state([])
   let loading = $state(false)
   let error = $state('')
   let result = $state(null)
 
-  let f = $state({ q: '', role: '', page: 1, size: 30 })
+  let f = $state({ q: '', role: '' })
+
+  const location = useLocation()
 
   onMount(async () => {
     cons = await loadConstants()
     roles = enumList(cons.character_roles)
-    await doSearch()
   })
 
-  async function doSearch() {
+  // 搜索以地址栏查询串为唯一驱动（q/role/page）；签名不变时跳过重复搜索
+  let appliedSig = null
+  $effect(() => {
+    const sp = parseQuery($location.search)
+    const sig = sp.toString()
+    if (sig === appliedSig) return
+    appliedSig = sig
+
+    const p = {
+      q: sp.get('q') ?? '',
+      role: sp.get('role') ?? '',
+      page: intParam(sp, 'page', 1),
+      size: 30
+    }
+    f.q = p.q
+    f.role = p.role
+    doSearch(p)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchCharacters(f)
+      result = await searchCharacters(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -33,13 +56,12 @@
   }
 
   function submit() {
-    f.page = 1
-    doSearch()
+    pushSearch(BASE, { q: f.q, role: f.role })
   }
 
   function changePage(p) {
-    f.page = p
-    doSearch()
+    if (!result) return
+    pushSearch(BASE, { q: f.q, role: f.role, page: p })
   }
 </script>
 

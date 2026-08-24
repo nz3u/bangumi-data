@@ -7,6 +7,9 @@
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { pushSearch } from '../lib/url.js'
+
+  const BASE = '/collaborations'
 
   let pidInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -74,7 +77,7 @@
     }
   }
 
-  // 查询新人物：重置棋盘选择与快速搜索后并行加载列表与职位标签
+  // 查询新人物：重置棋盘选择与快速搜索后并行加载列表与职位标签，并把 id 写回地址栏
   async function search(pid) {
     currentPid = pid
     selA = []
@@ -84,6 +87,7 @@
     tagQB = ''
     error = ''
     data = null // 切换人物时清除旧内容，避免闪现旧数据
+    pushSearch(BASE, { id: pid })
     loadPositions(pid)
     await load(pid, 1)
   }
@@ -104,11 +108,11 @@
     search(p.id)
   }
 
-  // 支持从抽屉「查看全部合作人物」直达：/collaborations?pid=123
+  // 支持直达：/collaborations?id=123（兼容旧 pid 参数）。
   // 挂载与 URL 查询串变化时自动查询对应人物。
   const location = useLocation()
   function pidFromSearch(search) {
-    const m = /[?&]pid=(\d+)/.exec(search ?? '')
+    const m = /[?&](?:id|pid)=(\d+)/.exec(search ?? '')
     return m ? Number(m[1]) : null
   }
   $effect(() => {
