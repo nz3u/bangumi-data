@@ -10,6 +10,7 @@
   //   父组件提交逻辑仍使用 ID；未选中直接回车则走原生表单提交（纯数字可用）。
   // - 建议中出现「显示名完全相同」的多个人物（常见中文姓名重名，如“刘畅”）时，
   //   列表顶部展示提示行；点选或回车确认后跳转人物搜索页并按该名字发起搜索。
+  //   纯数字输入且精确 ID 命中时不提示（意图明确，如输入“1”即 1 号人物）。
   // - 建议加载后默认高亮第一行（有重名提示时即提示行），回车可直接确认。
   let {
     inputId,
@@ -33,7 +34,8 @@
   let timer = null
   let reqSeq = 0 // 过期响应保护
 
-  // 是否存在重名建议：原名相同，或非空中文名相同（如“刘畅”的多位同名人名）
+  // 是否存在重名建议：原名相同，或非空中文名相同（如“刘畅”的多位同名人名）。
+  // 纯数字输入且精确 ID 命中时视为无歧义，不提示（如输入“1”会匹配大量含 1 的名字）。
   function dupExists(list) {
     const count = new Map()
     for (const p of list) {
@@ -44,12 +46,15 @@
     return false
   }
 
-  const hasDup = $derived(dupExists(items))
+  let idMatched = $state(false) // 本次建议为纯数字输入且精确 ID 命中
+
+  const hasDup = $derived(!idMatched && dupExists(items))
 
   // 建议加载后的默认高亮：第一行。存在重名提示时第一行即提示行（-1），
   // 否则为第一个人物（0）；如此回车可直接确认第一行，无需先按方向键。
-  function resetActive(list) {
-    active = dupExists(list) ? -1 : 0
+  // （ID 精确命中时视为无歧义，即使列表中另有同名人物也默认选中第一条。）
+  function resetActive() {
+    active = hasDup ? -1 : 0
   }
 
   function digitsOf(v) {
@@ -86,6 +91,7 @@
       open = false
       items = []
       active = -1
+      idMatched = false
       loading = false
       return
     }
@@ -104,6 +110,7 @@
         searchPersons({ q, page: 1, size: LIMIT })
       ])
       if (seq !== reqSeq) return
+      idMatched = !!(d && direct)
       const seen = new Set()
       const merged = []
       for (const p of [direct, ...(res.items ?? [])]) {
@@ -113,11 +120,12 @@
         if (merged.length >= LIMIT) break
       }
       items = merged
-      resetActive(merged)
+      resetActive()
       open = merged.length > 0
     } catch {
       if (seq === reqSeq) {
         items = []
+        idMatched = false
         open = false
       }
     } finally {
