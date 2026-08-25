@@ -1,10 +1,13 @@
 <script>
+  import { onMount } from 'svelte'
   import { getPairCollaboration } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
+  import { onNavParams } from '../lib/nav.js'
   import PinyinMatch from 'pinyin-match'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
 
+  const BASE = '/pairworks'
   let idAInput = $state('')
   let idBInput = $state('')
   let aSel = $state(null) // 搜索提示选中的人物 A（此时输入框显示名字）
@@ -64,6 +67,21 @@
     }
     load(a, b)
   }
+
+  // 跨标签页内部传参：其他页面（如人物详情抽屉）跳转过来时携带双方人物 ID，
+  // 自动回填输入框（带名字则显示名字）并直接查询。
+  onMount(() =>
+    onNavParams(BASE, (params) => {
+      const a = Number(params?.a ?? 0)
+      const b = Number(params?.b ?? 0)
+      if (!a || a <= 0 || !b || b <= 0 || a === b) return
+      aSel = a
+      bSel = b
+      idAInput = String(params?.aName ?? a)
+      idBInput = String(params?.bName ?? b)
+      load(a, b)
+    })
+  )
 
   // 职位标签统计：CV 各角色归并为一项（key 'cv'），其余以职务文本为 key，
   // count 为涉及条目数；排序与「人物合作」棋盘接口一致（按 count 倒序、同数按名称）。

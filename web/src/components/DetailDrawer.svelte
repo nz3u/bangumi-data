@@ -5,6 +5,7 @@
   import SubjectDetail from './SubjectDetail.svelte'
   import PersonDetail from './PersonDetail.svelte'
   import CharacterDetail from './CharacterDetail.svelte'
+  import SectionNav from './SectionNav.svelte'
   import { detailDrawer, closeDetail, peekBrief } from '../lib/detail.svelte.js'
 
   // 全局唯一详情抽屉：依据内部状态（detailDrawer）加载并渲染对应实体详情，
@@ -60,6 +61,9 @@
 
   // 头部展示对象：详情就绪前回退到列表行缓存的基础信息
   let head = $derived(view?.detail ?? peekBrief(kind, id))
+
+  // 滚动容器（供左侧快速跳转导航定位与滚动）
+  let scrollEl = $state(null)
 </script>
 
 <Drawer open={!!kind} label={LABELS[kind] ?? '详情'} onclose={closeDetail}>
@@ -87,7 +91,12 @@
       <button class="btn-mini ml-auto shrink-0" onclick={closeDetail}>关闭（Esc）</button>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-4 py-3">
+    {#if view}
+      <SectionNav container={scrollEl} />
+    {/if}
+
+    <!-- pl-8 为左侧快速跳转导航预留竖向空槽 -->
+    <div bind:this={scrollEl} class="flex-1 overflow-y-auto py-3 pl-8 pr-4">
       {#if !view}
         <div class="py-8 text-center text-sm text-neutral-500">加载详情…</div>
       {:else if view.error}
