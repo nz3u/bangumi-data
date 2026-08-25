@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        请**务必确认您的issue不是重复的且不是因为您的操作或版本问题**
+        �?*务必确认您的issue不是重复的且不是因为您的操作或版本问�?*
 
   - type: checkboxes
     attributes:
@@ -16,9 +16,9 @@ body:
         - label: |
             我确定没有重复的issue或discussions
         - label: |
-            我确定这是程序本身的问题而不是其他 (比如网络相关的报错)
+            我确定这是程序本身的问题而不是其�?(比如网络相关的报�?
         - label: |
-            我确定这个问题在最新版本中没有被修复
+            我确定这个问题在最新版本中没有被修�?
 
   - type: checkboxes
     attributes:
@@ -40,8 +40,8 @@ body:
     attributes:
       label: 程序版本
       description: |
-        您使用的是哪个版本的程序？
-      placeholder: v0.1.0
+        您使用的是哪个版本的程序�?
+      placeholder: v0.2.0
     validations:
       required: true
   - type: textarea
@@ -55,4 +55,4 @@ body:
     attributes:
       label: 日志
       description: |
-        请复制 粘贴/上传 错误日志、截图。
+        请复�?粘贴/上传 错误日志、截图�

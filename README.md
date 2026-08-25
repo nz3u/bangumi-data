@@ -18,11 +18,16 @@
 | 语言 | Go 1.25+ | 标准工具链交叉编译 |
 | 数据库 | SQLite（[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)） | 纯 Go 驱动，无 CGO，WAL 模式，FTS5 trigram 中文搜索 |
 | Web | [Gin](https://github.com/gin-gonic/gin) | REST API + 静态文件托管 |
-| 前端 | [Svelte 5](https://svelte.dev) + [Tailwind CSS 4](https://tailwindcss.com) + [Vite](https://vite.dev) | 搜索测试页，构建后内嵌进二进制（`web/`） |
+| 前端 | [Svelte 5](https://svelte.dev) + [Tailwind CSS 4](https://tailwindcss.com) + [Vite](https://vite.dev) | 六页路由（[svelte5-router](https://www.npmjs.com/package/svelte5-router)），详情抽屉，构建后内嵌进二进制（`web/`） |
 | YAML | [goccy/go-yaml](https://github.com/goccy/go-yaml) | 支持 common yaml 的 anchor/alias |
 | 部署 | Docker 多阶段构建 | alpine 最终镜像，数据卷持久化 |
 
 ## 快速开始
+
+### 0. 获取程序
+
+- **Release 二进制**：从 [Releases](https://github.com/nz3u/bangumi-data/releases) 下载对应平台的压缩包（推送 `v*` 标签自动构建，见下方「发布」）
+- **源码构建**：`make build`（前端构建 + go build），或按下面步骤手动执行
 
 ### 1. 导入数据
 
@@ -56,7 +61,26 @@ docker compose up -d bangumi
 
 ## 前端页面（内嵌）
 
-`web/` 是一个 Svelte + Tailwind 的搜索测试页（条目/人物/角色搜索、分页、条目详情），
+`web/` 是 Svelte 5 + Tailwind 4 的多页搜索前端，经 svelte5-router 提供六个直达页面
+（刷新/前进后退/URL 直达均可，根路径默认进入「人物合作」并聚焦首个标签）：
+
+| 路径 | 页面 | 说明 |
+|---|---|---|
+| `/collaborations` | 人物合作 | 人物简介 + 合作人物棋盘（职位标签筛选、共同条目） |
+| `/pairworks` | 双人合作 | 两人物共同参与的条目及双方职务 |
+| `/singleworks` | 单人作品 | 单人物参与的全部条目，按职务分组，支持职位筛选 |
+| `/subjects` | 条目搜索 | 多条件筛选 + 分页 |
+| `/persons` | 人物搜索 | 搜索建议（输入停顿 1s 自动执行） |
+| `/characters` | 角色搜索 | 同上 |
+
+通用能力：
+
+- **详情抽屉**：任意行点击弹出右侧抽屉（人物含 infobox「资料」栏），左侧快速跳转导航随滚动高亮当前区块；
+  人物条目内可单选关联人物直接跳转「双人合作」页自动查询
+- **重名提示**：人物/角色搜索建议检测到同名时顶部提示，确认后跳转人物搜索页发起同名搜索；
+  纯数字输入且精确 ID 命中时不提示（意图明确无歧义）
+- **明暗主题**：右上角切换，跟随系统记忆
+
 构建产物 `web/dist` 通过 `go:embed` 内嵌进二进制，单文件即可同时提供 API 与页面。
 `serve` 时若指定了 `-web` 目录（且存在）则优先托管磁盘目录，否则回退到内嵌页面。
 
@@ -75,9 +99,7 @@ go run ./cmd/bangumi serve -web web/dist   # 或直接跑内嵌版
 cd web && npm run dev
 ```
 
-后续扩展复杂检索：表单字段与查询参数映射集中在 `web/src/lib/api.js` 的
-`buildSubjectQuery`，新增筛选只需在视图表单加字段并在该函数中映射；API 侧扩展见
-`internal/api/subjects.go`。
+后续扩展复杂检索：表单字段与查询参数映射集中在 `web/src/lib/api.js`，新增筛选只需在视图表单加字段并在对应函数中映射；API 侧扩展见 `internal/api/`。
 
 ## 命令行
 
@@ -148,7 +170,10 @@ curl "localhost:8080/api/persons/7906/roles"
 ```
 cmd/bangumi/           CLI 入口（import / serve / version）
 embedded.go            根级包：go:embed 内嵌 common/*.yml
-web/                   Svelte+Tailwind 搜索页面（embed.go 内嵌 web/dist）
+web/
+  src/views/           六个页面视图
+  src/components/      抽屉、导航、建议、分页等组件
+  src/lib/             API 封装、常量、主题、图片状态
 common/                bangumi/common 子模块（id 常量）
 internal/
   common/              yaml 常量解析（anchor/alias），id→中文名
@@ -157,7 +182,23 @@ internal/
   importer/            zip/jsonlines 流式导入（事务批量）
   wiki/                轻量 infobox 解析（完整语法见 bangumi/wiki-parser-go）
   api/                 REST 接口
+.github/workflows/     CI（Go 测试+前端构建）与 Release 流水线
 Dockerfile / docker-compose.yml
+Makefile               make build / make serve 快捷命令
+```
+
+## 发布
+
+推送 `v*` 标签自动触发 Release 流水线（`.github/workflows/release.yml`）：
+
+1. 构建前端 `web/dist`
+2. 交叉编译全平台二进制（linux / windows / darwin × x86 / arm，版本号经 `-ldflags "-X main.version=…"` 注入）
+3. 创建 GitHub Release，附压缩包与 SHA256 校验和
+4. 构建多架构 Docker 镜像并推送至 `ghcr.io`
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 ## 说明与限制
