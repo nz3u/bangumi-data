@@ -8,6 +8,7 @@
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
   import { onNavParams } from '../lib/nav.js'
+  import { openDetail } from '../lib/detail.svelte.js'
 
   const BASE = '/collaborations'
 
@@ -531,7 +532,7 @@
                   />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
-                      <a href={`https://bgm.tv/person/${col.person_id}`} target="_blank" rel="noreferrer" class="font-medium text-sky-600 hover:underline dark:text-sky-400">{col.name}</a>
+                      <button type="button" class="cursor-pointer font-medium text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', col.person_id, col)}>{col.name}</button>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
                         {#if !subjExpanded(col.person_id)}
@@ -566,13 +567,12 @@
                     <div class="truncate subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each shownSubjects(col) as s (s.id)}
                         <span class="inline-flex max-w-full items-baseline gap-1">
-                          <a
-                            href={`https://bgm.tv/subject/${s.id}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            class="truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
+                          <button
+                            type="button"
+                            onclick={() => openDetail('subject', s.id, s)}
+                            class="cursor-pointer truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
                             title={`${s.date || '未知日期'} · ${s.type_name}${s.roles.length ? ' · ' + s.roles.join(' / ') : ''}`}
-                          >{s.name_cn || s.name}</a>
+                          >{s.name_cn || s.name}</button>
                           {#if s.roles.length}
                             <small class="shrink-0 text-[11px] text-neutral-400">{s.roles.join(' / ')}</small>
                             <!--small class="w-full min-w-0 truncate text-[11px] text-neutral-400">{s.roles.join(' / ')}</small-->
