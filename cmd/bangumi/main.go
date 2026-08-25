@@ -24,8 +24,9 @@ import (
 	"bangumi-subject-go/internal/pics"
 )
 
-// 版本号可在构建时通过 -ldflags "-X main.version=x.y.z" 注入。
-var version = "0.2.0"
+	// 版本号由发布流水线在编译时通过 -ldflags "-X main.version=x.y.z" 注入
+	// （取自 git 标签）；本地或 CI 直接 go build 时为 "dev"，避免误报固定版本。
+	var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -197,7 +198,7 @@ func cmdServe(args []string) error {
 		log.Printf("人物头像服务已就绪（API Key %s）", map[bool]string{true: "已配置", false: "未配置"}[picSvc.HasKey()])
 	}
 
-	router := api.NewRouter(conn, cons, *webDir, picSvc)
+	router := api.NewRouter(conn, cons, *webDir, picSvc, version)
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           router,

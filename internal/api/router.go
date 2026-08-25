@@ -17,22 +17,24 @@ import (
 
 // handler 持有 API 所需的依赖。
 type handler struct {
-	db   *sql.DB
-	cons *common.Constants
-	pics *pics.Service
+	db      *sql.DB
+	cons    *common.Constants
+	pics    *pics.Service
+	version string // 编译期注入的版本号（随 /api/health 返回）
 }
 
 // NewRouter 构建 gin 路由。
+// version 为编译期注入的版本标识（发布流水线取 git 标签，开发构建为 "dev"）。
 // webDir 非空且存在时，优先托管磁盘上的前端目录（便于开发热更新）；
 // 否则回退到编译期内嵌的 web/dist（单二进制部署，无需额外参数）。
 // picSvc 为图片解析服务（人物头像/条目封面/角色头像），可为 nil（图片接口返回未启用）。
-func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service) *gin.Engine {
+func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service, version string) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware())
 
-	h := &handler{db: conn, cons: cons, pics: picSvc}
+	h := &handler{db: conn, cons: cons, pics: picSvc, version: version}
 
 	api := r.Group("/api")
 	{

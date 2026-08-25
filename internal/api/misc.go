@@ -9,13 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// health 健康检查。
+// health 健康检查；附带编译期注入的版本号，供前端页头展示（前后端版本同源）。
 func (h *handler) health(c *gin.Context) {
 	if err := h.db.Ping(); err != nil {
 		fail(c, 500, "数据库不可用: "+err.Error())
 		return
 	}
-	respOK(c, gin.H{"status": "ok"})
+	respOK(c, gin.H{"status": "ok", "version": h.version})
 }
 
 // stats 各表行数统计（用于确认导入状态）。

@@ -190,5 +190,8 @@ jobs:
           push: ${{ github.event_name == 'push' }}   # 仅标签推送时发布；手动触发只构建验证
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 版本标识与二进制发布一致：标签触发取标签名（如 v0.2.0），手动触发为 dev
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

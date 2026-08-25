@@ -7,6 +7,10 @@ WORKDIR /src
 ARG TARGETOS TARGETARCH
 ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 
+# 版本标识：发布流水线传入 git 标签（如 v0.2.0），本地构建默认 dev；
+# 去掉前缀 v 后经 ldflags 写入 main.version
+ARG VERSION=dev
+
 # 利用层缓存：先拷贝依赖清单
 COPY go.mod go.sum ./
 RUN go mod download
@@ -19,7 +23,8 @@ COPY common ./common
 COPY web/embed.go ./web/
 COPY web/dist ./web/dist
 
-RUN go build -trimpath -ldflags="-s -w" -o /out/bangumi ./cmd/bangumi
+RUN VERSION="${VERSION#v}" && \
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/bangumi ./cmd/bangumi
 
 # 运行阶段
 FROM alpine:3.20
