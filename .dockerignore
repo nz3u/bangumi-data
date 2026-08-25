@@ -7,7 +7,6 @@ data/
 *.db-shm
 dump-*.zip
 web/node_modules/
-web/dist/
 bangumi
 bangumi.exe
 dist/

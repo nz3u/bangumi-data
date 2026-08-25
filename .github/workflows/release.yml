@@ -147,16 +147,20 @@ jobs:
           generate_release_notes: true
 
   # ---------- 4. Docker 多架构镜像 → ghcr.io ----------
+  # web/dist 复用 frontend job 产物（镜像内不再跑 npm）；
+  # Go 经 BUILDPLATFORM + TARGETARCH 交叉编译，全程原生执行，无需 QEMU
   docker:
     name: Docker image (ghcr.io)
+    needs: frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      - name: Download web/dist
+        uses: actions/download-artifact@v8
         with:
-          platforms: arm64
+          name: web-dist
+          path: web/dist
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

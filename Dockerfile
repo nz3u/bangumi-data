@@ -1,14 +1,11 @@
-# 前端构建阶段
-FROM node:22-alpine AS web
-WORKDIR /web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
-COPY web ./
-RUN npm run build
-
-# 构建阶段
-FROM golang:1.25-alpine AS build
+# 构建阶段（web/dist 由流水线 frontend job 预先构建、随构建上下文传入；
+# 本地构建请先执行：cd web && npm install && npm run build）
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 WORKDIR /src
+
+# 目标平台由 buildx 注入，Go 原生交叉编译，无需 QEMU 模拟
+ARG TARGETOS TARGETARCH
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 
 # 利用层缓存：先拷贝依赖清单
 COPY go.mod go.sum ./
@@ -19,9 +16,10 @@ COPY embedded.go ./
 COPY cmd ./cmd
 COPY internal ./internal
 COPY common ./common
-COPY --from=web /web ./web
+COPY web/embed.go ./web/
+COPY web/dist ./web/dist
 
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bangumi ./cmd/bangumi
+RUN go build -trimpath -ldflags="-s -w" -o /out/bangumi ./cmd/bangumi
 
 # 运行阶段
 FROM alpine:3.20

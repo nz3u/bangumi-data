@@ -1,5 +1,6 @@
 services:
   bangumi:
+    # 构建前需先产出前端（web/dist 内嵌进二进制）：cd web && npm install && npm run build
     build: .
     container_name: bangumi
     ports:
