@@ -7,8 +7,8 @@
   import CharacterDetail from './CharacterDetail.svelte'
   import { detailDrawer, closeDetail, peekBrief } from '../lib/detail.svelte.js'
 
-  // 全局唯一详情抽屉：依据锚点（#/subject@1 等）加载并渲染对应实体详情，
-  // 锚点变化时原地替换内容；内部实体链接统一走锚点跳转。
+  // 全局唯一详情抽屉：依据内部状态（detailDrawer）加载并渲染对应实体详情，
+  // 实体切换时原地替换内容；内部实体跳转统一走 openDetail（不写入地址栏）。
   // 各实体内容渲染拆分至 SubjectDetail / PersonDetail / CharacterDetail。
   const LABELS = { subject: '条目详情', person: '人物详情', character: '角色详情' }
   const FETCHERS = { subject: getSubject, person: getPerson, character: getCharacter }

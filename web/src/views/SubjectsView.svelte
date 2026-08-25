@@ -1,18 +1,12 @@
 <script>
   import { onMount } from 'svelte'
   import { searchSubjects } from '../lib/api.js'
-  import { loadConstants, platformsFor, enumList } from '../lib/constants.js'
+  import { loadConstants, platformsFor, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
 
-  let cons = $state(null)
-  let types = $state([])
-  let loading = $state(false)
-  let error = $state('')
-  let result = $state(null)
-
-  let f = $state({
+  const DEFAULTS = {
     q: '',
     type: '',
     platform: '',
@@ -27,8 +21,14 @@
     sort: 'id',
     order: 'asc',
     size: 30
-  })
-  let page = $state(1)
+  }
+  let cons = $state(null)
+  let types = $state([])
+  let loading = $state(false)
+  let error = $state('')
+  let result = $state(null)
+
+  let f = $state({ ...DEFAULTS })
 
   const platforms = $derived(f.type ? platformsFor(cons, f.type) : [])
 
@@ -53,15 +53,34 @@
   onMount(async () => {
     cons = await loadConstants()
     types = enumList(cons.subject_types)
-    await doSearch()
+    await doSearch({ ...f, page: 1 }) // 挂载即展示第 1 页（空条件 = 全量列表）
   })
 
-  async function doSearch() {
+  // 搜索由表单状态直接驱动：提交/翻页/重置时按当前表单发起请求。
+  let autoTimer = null
+  const formSig = () => JSON.stringify(f)
+  let appliedFormSig = formSig()
+
+  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
+  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。手动提交会先更新快照，故不会误触发；
+  // 输入回退到与快照一致则取消。
+  $effect(() => {
+    const sig = formSig()
+    if (sig === appliedFormSig) return
+    clearTimeout(autoTimer)
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      submit()
+    }, AUTO_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(autoTimer)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchSubjects({ ...f, page })
+      result = await searchSubjects(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -70,31 +89,22 @@
   }
 
   function submit() {
-    page = 1
-    doSearch()
+    clearTimeout(autoTimer)
+    autoTimer = null
+    appliedFormSig = formSig()
+    doSearch({ ...f, page: 1 })
   }
 
   function resetForm() {
-    f.q = ''
-    f.type = ''
-    f.platform = ''
-    f.tag = ''
-    f.metaTag = ''
-    f.rankMin = ''
-    f.scoreMin = ''
-    f.dateFrom = ''
-    f.dateTo = ''
-    f.nsfw = ''
-    f.series = ''
-    f.sort = 'id'
-    f.order = 'asc'
-    page = 1
-    doSearch()
+    clearTimeout(autoTimer)
+    autoTimer = null
+    Object.assign(f, DEFAULTS)
+    appliedFormSig = formSig()
+    doSearch({ ...DEFAULTS, page: 1 })
   }
 
   function changePage(p) {
-    page = p
-    doSearch()
+    doSearch({ ...f, page: p })
   }
 </script>
 

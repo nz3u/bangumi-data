@@ -1,12 +1,14 @@
 <script>
   import { fade } from 'svelte/transition'
-  import { useLocation } from 'svelte5-router'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { consumeNav } from '../lib/nav.svelte.js'
+
+  const BASE = '/collaborations'
 
   let pidInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -104,16 +106,12 @@
     search(p.id)
   }
 
-  // 支持从抽屉「查看全部合作人物」直达：/collaborations?pid=123
-  // 挂载与 URL 查询串变化时自动查询对应人物。
-  const location = useLocation()
-  function pidFromSearch(search) {
-    const m = /[?&]pid=(\d+)/.exec(search ?? '')
-    return m ? Number(m[1]) : null
-  }
+  // 跨标签页内部传参：其他页面（如人物详情抽屉）跳转过来时携带目标人物 ID。
+  // 挂载时消费在途参数；停留本页期间再次收到跳转时因 seq 变化重新消费。
   $effect(() => {
-    const pid = pidFromSearch($location.search)
-    if (!pid || pid === currentPid) return
+    const params = consumeNav(BASE)
+    const pid = Number(params?.id ?? 0)
+    if (!pid || pid <= 0 || pid === currentPid) return
     pidInput = String(pid)
     pidSel = null
     search(pid)

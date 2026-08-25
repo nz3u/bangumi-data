@@ -1,6 +1,6 @@
 <script>
   import { fmtScore } from '../lib/format.js'
-  import { detailHref } from '../lib/detail.svelte.js'
+  import { openDetail } from '../lib/detail.svelte.js'
   import EntityPic from './EntityPic.svelte'
   import InfoboxList from './InfoboxList.svelte'
 
@@ -34,7 +34,7 @@
       {#each d.relations ?? [] as r}
         <li class="text-neutral-700 dark:text-neutral-300">
           <span class="text-neutral-500">{r.relation_name}</span>
-          <a href={detailHref('character', r.related_person_id)} class="hover:underline">{r.related_name || r.related_person_id}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('character', r.related_person_id)}>{r.related_name || r.related_person_id}</button>
         </li>
       {/each}
     </ul>
@@ -48,7 +48,7 @@
       {#each d.subjects ?? [] as s}
         <li class="text-neutral-700 dark:text-neutral-300">
           <span class="text-neutral-500">{s.date || '—'}</span>
-          <a href={detailHref('subject', s.subject_id)} class="hover:underline">{s.name_cn || s.name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('subject', s.subject_id)}>{s.name_cn || s.name}</button>
           {#if s.score > 0}<span class="text-amber-600 dark:text-amber-400">{fmtScore(s.score)}</span>{/if}
         </li>
       {/each}
@@ -62,7 +62,7 @@
     <ul class="space-y-0.5 text-sm">
       {#each d.cvs ?? [] as c}
         <li class="text-neutral-700 dark:text-neutral-300">
-          <a href={detailHref('person', c.person_id)} class="hover:underline">{c.name}</a>
+          <button type="button" class="cursor-pointer hover:underline" onclick={() => openDetail('person', c.person_id)}>{c.name}</button>
           {#if c.type_name}<span class="chip">{c.type_name}</span>{/if}
         </li>
       {/each}

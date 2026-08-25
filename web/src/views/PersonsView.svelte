@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { searchPersons } from '../lib/api.js'
-  import { loadConstants, enumList } from '../lib/constants.js'
+  import { loadConstants, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { careerCn } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
@@ -12,20 +12,39 @@
   let error = $state('')
   let result = $state(null)
 
-  let f = $state({ q: '', type: '', page: 1, size: 30 })
+  let f = $state({ q: '', type: '' })
 
   onMount(async () => {
     cons = await loadConstants()
     types = enumList(cons.person_types)
-    await doSearch()
+    await doSearch({ q: f.q, type: f.type, page: 1, size: 30 }) // 挂载即展示第 1 页
   })
 
-  async function doSearch() {
+  // 搜索由表单状态直接驱动：提交/翻页时按当前表单发起请求。
+  let autoTimer = null
+  const formSig = () => JSON.stringify(f)
+  let appliedFormSig = formSig()
+
+  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
+  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。手动提交会先更新快照，故不会误触发；
+  // 输入回退到与快照一致则取消。
+  $effect(() => {
+    const sig = formSig()
+    if (sig === appliedFormSig) return
+    clearTimeout(autoTimer)
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      submit()
+    }, AUTO_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(autoTimer)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchPersons(f)
+      result = await searchPersons(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -34,13 +53,15 @@
   }
 
   function submit() {
-    f.page = 1
-    doSearch()
+    clearTimeout(autoTimer)
+    autoTimer = null
+    appliedFormSig = formSig()
+    doSearch({ q: f.q, type: f.type, page: 1, size: 30 })
   }
 
   function changePage(p) {
-    f.page = p
-    doSearch()
+    if (!result) return
+    doSearch({ q: f.q, type: f.type, page: p, size: 30 })
   }
 </script>
 
