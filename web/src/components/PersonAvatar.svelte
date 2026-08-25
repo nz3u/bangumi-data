@@ -1,16 +1,18 @@
 <script>
   import { onDestroy } from 'svelte'
-  import { requestPic, picStore } from '../lib/personPic.svelte.js'
+  import { requestPic, picInfo } from '../lib/pics.svelte.js'
 
   // 统一的人物头像组件：
   // - 懒加载：进入视口附近才向全局队列发起解析请求
   // - 等待/失败/为空时显示名字首字符占位（沿用调用处的配色样式）
   // - 右上角状态角标：解析中/图片下载中显示转圈，无图或加载失败显示打叉
   // 外层尺寸/圆角/配色通过 class 传入，与原字符头像完全一致。
+  // size 为请求的 CDN 尺寸（l/m/s/grid），小头像建议 grid 以减小下载体积。
   let {
     pid,
     name = '',
     class: cls = 'size-14',
+    size = 'g',
     title = '',
     onclick = null
   } = $props()
@@ -19,7 +21,7 @@
   let visible = $state(false)
   let imgState = $state('idle') // idle | loaded | broken
 
-  const info = $derived(pid != null ? picStore[String(pid)] : null)
+  const info = $derived(pid != null ? picInfo('person', pid, size) : null)
   const initial = $derived((name || '?').slice(0, 1))
   // 解析中，或 URL 已就绪但图片本体仍在下载 → 转圈
   const busy = $derived(info?.status === 'loading' || (!!info?.url && imgState === 'idle'))
@@ -70,7 +72,7 @@
   })
 
   $effect(() => {
-    if (visible && pid != null) requestPic(pid)
+    if (visible && pid != null) requestPic('person', pid, size)
   })
 </script>
 
