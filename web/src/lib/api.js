@@ -83,9 +83,11 @@ export function getPerson(id) {
   return request(`/persons/${id}`)
 }
 
-// 人物头像解析（轮询接口）：data = {status:'ok'|'pending'|'failed', url?}
-export function personAvatar(id) {
-  return request(`/persons/${id}/avatar`)
+// 图片解析（轮询接口）：data = {status:'ok'|'pending'|'failed', url?}
+// kind: 'person'（人物头像）| 'subject'（条目封面）| 'character'（角色头像）
+// size: 'l'|'m'|'s'|'grid'，决定返回的 CDN 尺寸（小头像建议 grid）
+export function resolvePic(kind, id, size) {
+  return request(`/pics/${kind}/${id}`, { size })
 }
 
 export function getPersonWorks(id, params) {
