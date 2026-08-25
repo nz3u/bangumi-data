@@ -20,35 +20,6 @@ concurrency:
 
 jobs:
   # 跳过条件：push 事件不跳过；PR 打了 skip-ci 标签或标题含跳过标记时不运行
-  backend:
-    name: Go build & test
-    if: >-
-      github.event_name == 'push' ||
-      (
-        !contains(github.event.pull_request.labels.*.name, 'skip-ci') &&
-        !contains(github.event.pull_request.title, '[skip ci]') &&
-        !contains(github.event.pull_request.title, '[ci skip]') &&
-        !contains(github.event.pull_request.title, '[skip actions]') &&
-        !contains(github.event.pull_request.title, '[actions skip]')
-      )
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
   frontend:
     name: Frontend build
     if: >-
@@ -77,3 +48,40 @@ jobs:
       - name: Build
         working-directory: web
         run: npm run build
+
+      - name: Upload web/dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist/
+          retention-days: 1
+          if-no-files-found: error
+
+  # 后端编译依赖前端产物：web/embed.go 以 all:dist 内嵌 web/dist，
+  # 需先下载 frontend job 的构建产物再 go build
+  backend:
+    name: Go build & test
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download web/dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
