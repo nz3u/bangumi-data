@@ -1,21 +1,16 @@
 <script>
   import { onMount } from 'svelte'
-  import { searchSubjects, getSubject } from '../lib/api.js'
+  import { searchSubjects } from '../lib/api.js'
   import { loadConstants, platformsFor, enumList } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
   import Pagination from '../components/Pagination.svelte'
-  import Drawer from '../components/Drawer.svelte'
+  import { openDetail } from '../lib/detail.svelte.js'
 
   let cons = $state(null)
   let types = $state([])
   let loading = $state(false)
   let error = $state('')
   let result = $state(null)
-  let selected = $state(null)
-  let detail = $state(null)
-  let detailLoading = $state(false)
-
-  const cur = $derived(detail && !detail.error ? detail : selected)
 
   let f = $state({
     q: '',
@@ -100,24 +95,6 @@
   function changePage(p) {
     page = p
     doSearch()
-  }
-
-  async function openDetail(item) {
-    selected = item
-    detail = null
-    detailLoading = true
-    try {
-      detail = await getSubject(item.id)
-    } catch (e) {
-      detail = { error: e.message }
-    } finally {
-      detailLoading = false
-    }
-  }
-
-  function closeDetail() {
-    selected = null
-    detail = null
   }
 </script>
 
@@ -242,7 +219,7 @@
           </thead>
           <tbody>
             {#each result.items as it (it.id)}
-              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail(it)}>
+              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail('subject', it.id, it)}>
                 <td class="text-neutral-500">{it.id}</td>
                 <td>{it.type_name}</td>
                 <td class="max-w-52 truncate">
@@ -276,92 +253,3 @@
     </div>
   {/if}
 </div>
-
-<Drawer open={!!selected} label="条目详情" onclose={closeDetail}>
-  <div class="flex items-start gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-    <h3 class="min-w-0 flex-1 truncate text-base font-semibold">
-      <a href={`https://bgm.tv/subject/${selected.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">{cur.name_cn || cur.name}</a>
-    </h3>
-    <button class="btn-mini shrink-0" onclick={closeDetail}>关闭（Esc）</button>
-  </div>
-
-  <div class="flex flex-wrap items-center gap-1 border-b border-neutral-100 px-4 py-2 dark:border-neutral-900">
-    <span class="chip">{cur.type_name}</span>
-    <span class="chip">{cur.platform_name}</span>
-    {#if detail?.series}<span class="chip">系列</span>{/if}
-    {#if cur.nsfw}<span class="chip text-red-600 dark:text-red-400">R18</span>{/if}
-  </div>
-
-  <div class="flex-1 overflow-y-auto px-4 py-3">
-    {#if detailLoading}
-      <div class="py-8 text-center text-sm text-neutral-500">加载详情…</div>
-    {:else if detail?.error}
-      <p class="text-sm text-red-600 dark:text-red-400">详情加载失败：{detail.error}</p>
-    {:else}
-      <section class="mb-4">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
-          <div><dt class="label">ID</dt><dd class="text-neutral-500">{cur.id}</dd></div>
-          <div><dt class="label">日期</dt><dd>{fmtDate(cur.date)}</dd></div>
-          <div><dt class="label">评分</dt><dd class="text-amber-600 dark:text-amber-400">{fmtScore(cur.score)}</dd></div>
-          <div><dt class="label">排名</dt><dd>{fmtRank(cur.rank)}</dd></div>
-          <div><dt class="label">收藏</dt><dd>{fmtFavorite(cur.favorite)}</dd></div>
-          <div><dt class="label">集数</dt><dd>{detail ? (detail.episode_count || '—') : '…'}</dd></div>
-        </dl>
-        <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={cur.name}>原名：{cur.name}</p>
-        <div class="mt-1.5 flex flex-wrap items-center gap-1">
-          <span class="text-xs text-neutral-500 dark:text-neutral-400">标签：</span>
-          {#each cur.tags ?? [] as t}
-            <span class="chip">{t.name}</span>
-          {/each}
-        </div>
-        {#if detail}
-          <div class="mt-1.5 flex flex-wrap items-center gap-1">
-            <span class="text-xs text-neutral-500 dark:text-neutral-400">Meta 标签：</span>
-            {#each detail.meta_tags ?? [] as m}
-              <span class="chip">{m}</span>
-            {/each}
-          </div>
-        {/if}
-      </section>
-
-      <section class="mb-4">
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
-        <p class="whitespace-pre-wrap text-sm leading-relaxed">{cur.summary || '（无简介）'}</p>
-      </section>
-
-      <section class="mb-4">
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">关联（{detail?.relations.length ?? '…'}）</h4>
-        <ul class="space-y-0.5 text-sm">
-          {#each detail?.relations ?? [] as r}
-            <li class="text-neutral-700 dark:text-neutral-300">
-              <span class="text-neutral-500">{r.relation_name}</span> →
-              <span class="text-neutral-500">{r.related_type_name}</span> {r.related_name_cn || r.related_name}
-            </li>
-          {/each}
-        </ul>
-      </section>
-
-      <section class="mb-4">
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">制作人员（{detail?.staff.length ?? '…'}）</h4>
-        <ul class="space-y-0.5 text-sm">
-          {#each detail?.staff ?? [] as s}
-            <li class="text-neutral-700 dark:text-neutral-300">
-              <span class="text-neutral-500">{s.position_name}</span> {s.person_name}
-            </li>
-          {/each}
-        </ul>
-      </section>
-
-      <section>
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">角色（{detail?.characters.length ?? '…'}）</h4>
-        <ul class="space-y-0.5 text-sm">
-          {#each detail?.characters ?? [] as c}
-            <li class="text-neutral-700 dark:text-neutral-300">
-              <span class="text-neutral-500">{c.role_name}</span> {c.name}
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-  </div>
-</Drawer>
