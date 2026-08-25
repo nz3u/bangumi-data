@@ -1,36 +1,49 @@
 <script>
   import { onMount } from 'svelte'
-  import { searchCharacters, getCharacter } from '../lib/api.js'
-  import { loadConstants, enumList } from '../lib/constants.js'
-  import { fmtScore } from '../lib/format.js'
+  import { searchCharacters } from '../lib/api.js'
+  import { loadConstants, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import Pagination from '../components/Pagination.svelte'
-  import Drawer from '../components/Drawer.svelte'
+  import { openDetail } from '../lib/detail.svelte.js'
 
   let cons = $state(null)
   let roles = $state([])
   let loading = $state(false)
   let error = $state('')
   let result = $state(null)
-  let selected = $state(null)
-  let detail = $state(null)
-  let detailLoading = $state(false)
 
-  const cur = $derived(detail && !detail.error ? detail : selected)
-
-  let f = $state({ q: '', role: '', page: 1, size: 30 })
+  let f = $state({ q: '', role: '' })
 
   onMount(async () => {
     cons = await loadConstants()
     roles = enumList(cons.character_roles)
-    await doSearch()
+    await doSearch({ q: f.q, role: f.role, page: 1, size: 30 }) // 挂载即展示第 1 页
   })
 
-  async function doSearch() {
+  // 搜索由表单状态直接驱动：提交/翻页时按当前表单发起请求。
+  let autoTimer = null
+  const formSig = () => JSON.stringify(f)
+  let appliedFormSig = formSig()
+
+  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
+  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。手动提交会先更新快照，故不会误触发；
+  // 输入回退到与快照一致则取消。
+  $effect(() => {
+    const sig = formSig()
+    if (sig === appliedFormSig) return
+    clearTimeout(autoTimer)
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      submit()
+    }, AUTO_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(autoTimer)
+  })
+
+  async function doSearch(p) {
     loading = true
     error = ''
     result = null
     try {
-      result = await searchCharacters(f)
+      result = await searchCharacters(p)
     } catch (e) {
       error = e.message
     } finally {
@@ -39,31 +52,15 @@
   }
 
   function submit() {
-    f.page = 1
-    doSearch()
+    clearTimeout(autoTimer)
+    autoTimer = null
+    appliedFormSig = formSig()
+    doSearch({ q: f.q, role: f.role, page: 1, size: 30 })
   }
 
   function changePage(p) {
-    f.page = p
-    doSearch()
-  }
-
-  async function openDetail(item) {
-    selected = item
-    detail = null
-    detailLoading = true
-    try {
-      detail = await getCharacter(item.id)
-    } catch (e) {
-      detail = { error: e.message }
-    } finally {
-      detailLoading = false
-    }
-  }
-
-  function closeDetail() {
-    selected = null
-    detail = null
+    if (!result) return
+    doSearch({ q: f.q, role: f.role, page: p, size: 30 })
   }
 </script>
 
@@ -113,7 +110,7 @@
           </thead>
           <tbody>
             {#each result.items as it (it.id)}
-              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail(it)}>
+              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail('character', it.id, it)}>
                 <td class="text-neutral-500"><a href={`https://bgm.tv/character/${it.id}`} target="_blank" rel="noreferrer" class="hover:underline" onclick={(e) => e.stopPropagation()}>{it.id}</a></td>
                 <td class="max-w-64 truncate"><a href={`https://bgm.tv/character/${it.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name}</a></td>
                 <td class="max-w-52 truncate">{it.name_cn || '—'}</td>
@@ -131,64 +128,3 @@
     </div>
   {/if}
 </div>
-
-<Drawer open={!!selected} label="角色详情" onclose={closeDetail}>
-  <div class="flex items-start gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-    <h3 class="min-w-0 flex-1 truncate text-base font-semibold">
-      <a href={`https://bgm.tv/character/${selected.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">{cur.name_cn || cur.name}</a>
-    </h3>
-    <button class="btn-mini shrink-0" onclick={closeDetail}>关闭（Esc）</button>
-  </div>
-
-  <div class="flex flex-wrap items-center gap-1 border-b border-neutral-100 px-4 py-2 dark:border-neutral-900">
-    {#if cur.role_name}<span class="chip">{cur.role_name}</span>{/if}
-  </div>
-
-  <div class="flex-1 overflow-y-auto px-4 py-3">
-    {#if detailLoading}
-      <div class="py-8 text-center text-sm text-neutral-500">加载详情…</div>
-    {:else if detail?.error}
-      <p class="text-sm text-red-600 dark:text-red-400">详情加载失败：{detail.error}</p>
-    {:else}
-      <section class="mb-4">
-        <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-          <div><dt class="label">ID</dt><dd class="text-neutral-500">{cur.id}</dd></div>
-          <div><dt class="label">收藏</dt><dd>{cur.collects}</dd></div>
-          <div><dt class="label">评论</dt><dd>{cur.comments}</dd></div>
-          <div><dt class="label">出演作品数</dt><dd>{detail ? (detail.subjects.length || '—') : '…'}</dd></div>
-        </dl>
-        <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={cur.name}>原名：{cur.name}</p>
-      </section>
-
-      <section class="mb-4">
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
-        <p class="whitespace-pre-wrap text-sm leading-relaxed">{cur.summary || '（无简介）'}</p>
-      </section>
-
-      <section class="mb-4">
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">出演作品（{detail?.subjects.length ?? '…'}）</h4>
-        <ul class="space-y-0.5 text-sm">
-          {#each detail?.subjects ?? [] as s}
-            <li class="text-neutral-700 dark:text-neutral-300">
-              <span class="text-neutral-500">{s.date || '—'}</span>
-              <a href={`https://bgm.tv/subject/${s.subject_id}`} target="_blank" rel="noreferrer" class="hover:underline">{s.name_cn || s.name}</a>
-              {#if s.score > 0}<span class="text-amber-600 dark:text-amber-400">{fmtScore(s.score)}</span>{/if}
-            </li>
-          {/each}
-        </ul>
-      </section>
-
-      <section>
-        <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">声优 / 演员（{detail?.cvs.length ?? '…'}）</h4>
-        <ul class="space-y-0.5 text-sm">
-          {#each detail?.cvs ?? [] as c}
-            <li class="text-neutral-700 dark:text-neutral-300">
-              <a href={`https://bgm.tv/person/${c.person_id}`} target="_blank" rel="noreferrer" class="hover:underline">{c.name}</a>
-              {#if c.type_name}<span class="chip">{c.type_name}</span>{/if}
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-  </div>
-</Drawer>

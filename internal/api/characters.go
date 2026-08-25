@@ -4,23 +4,27 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"bangumi-subject-go/internal/wiki"
 )
 
 // characterDetail 角色详情。
 type characterDetail struct {
-	ID       int64  `json:"id"`
-	Role     int    `json:"role"`
-	RoleName string `json:"role_name"`
-	Name     string `json:"name"`
-	NameCN   string `json:"name_cn"`
-	Infobox  string `json:"infobox"`
-	Summary  string `json:"summary"`
-	Comments int    `json:"comments"`
-	Collects int    `json:"collects"`
+	ID       int64        `json:"id"`
+	Role     int          `json:"role"`
+	RoleName string       `json:"role_name"`
+	Name     string       `json:"name"`
+	NameCN   string       `json:"name_cn"`
+	Infobox  []wiki.Field `json:"infobox,omitempty"`
+	Summary  string       `json:"summary"`
+	Comments int          `json:"comments"`
+	Collects int          `json:"collects"`
 	// 出演作品
 	Subjects []characterSubjectItem `json:"subjects"`
 	// 声优/演员（person_characters 关联）
 	CVs []cvItem `json:"cvs"`
+	// 角色关联（person_relations 中 crt 行，双向）
+	Relations []personRelationItem `json:"relations"`
 }
 
 type characterSubjectItem struct {
@@ -153,15 +157,19 @@ func (h *handler) getCharacter(c *gin.Context) {
 		return
 	}
 
-	d := characterDetail{Subjects: []characterSubjectItem{}, CVs: []cvItem{}}
+	d := characterDetail{Subjects: []characterSubjectItem{}, CVs: []cvItem{}, Relations: []personRelationItem{}}
+	var rawInfobox string
 	err := h.db.QueryRow(`SELECT id, role, name, name_cn, infobox, summary, comments, collects
 		FROM characters WHERE id = ?`, id).
-		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &d.Infobox, &d.Summary, &d.Comments, &d.Collects)
+		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &rawInfobox, &d.Summary, &d.Comments, &d.Collects)
 	if err != nil {
 		fail(c, 404, "角色不存在")
 		return
 	}
 	d.RoleName = h.cons.CharacterRoles[d.Role]
+	if ib, err := wiki.ParseInfobox(rawInfobox); err == nil {
+		d.Infobox = ib.Fields
+	}
 
 	// 出演作品
 	srows, err := h.db.Query(`SELECT s.id, s.name, s.name_cn, s.type, sc.type, sc."order", s.date, s.score
@@ -185,27 +193,71 @@ func (h *handler) getCharacter(c *gin.Context) {
 	}
 	srows.Close()
 
-	// 声优/演员（CV）
-	crows, err := h.db.Query(`SELECT pc.person_id, p.name, p.type, pc.subject_id, COALESCE(s.name, ''), pc.summary
+	// 声优/演员（CV）。按人物去重：同一人物在不同作品/译配下会重复出现，
+	// 这里只保留每个人物一条（类型取最小值，主配 CV=0 优先）。
+	crows, err := h.db.Query(`SELECT pc.person_id, p.name, MIN(pc.type)
 		FROM person_characters pc
 		JOIN persons p ON p.id = pc.person_id
-		LEFT JOIN subjects s ON s.id = pc.subject_id
 		WHERE pc.character_id = ?
-		ORDER BY pc.type, pc.subject_id, pc.person_id`, id)
+		GROUP BY pc.person_id
+		ORDER BY MIN(pc.type), pc.person_id`, id)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 	for crows.Next() {
 		var it cvItem
-		if err := crows.Scan(&it.PersonID, &it.Name, &it.Type, &it.SubjectID, &it.SubjectName, &it.Summary); err != nil {
+		if err := crows.Scan(&it.PersonID, &it.Name, &it.Type); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
-		it.TypeName = h.cons.PersonTypes[it.Type]
+		it.TypeName = h.cons.PersonRelationCN("prsn_cv", it.Type)
 		d.CVs = append(d.CVs, it)
 	}
 	crows.Close()
+
+	// 角色关联（双向）。仅取 crt 行：crt 行两端都是角色；
+	// prsn 行属于人物域，ID 与角色相互独立、不可按数字混用。
+	rrows, err := h.db.Query(`SELECT pr.relation_type, pr.related_person_id, COALESCE(c.name, ''), COALESCE(c.role, 0)
+		FROM person_relations pr
+		JOIN characters c ON c.id = pr.related_person_id
+		WHERE pr.person_type = 'crt' AND pr.person_id = ?
+		UNION ALL
+		SELECT pr.relation_type, pr.person_id, COALESCE(c.name, ''), COALESCE(c.role, 0)
+		FROM person_relations pr
+		JOIN characters c ON c.id = pr.person_id
+		WHERE pr.person_type = 'crt' AND pr.related_person_id = ?
+		ORDER BY relation_type, related_person_id`, id, id)
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	for rrows.Next() {
+		var (
+			rt      int
+			relID   int64
+			name    string
+			crole   int
+		)
+		if err := rrows.Scan(&rt, &relID, &name, &crole); err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		d.Relations = append(d.Relations, personRelationItem{
+			PersonType:      "crt",
+			PersonID:        id,
+			RelatedPersonID: relID,
+			RelatedName:     name,
+			RelatedType:     crole,
+			RelationType:    rt,
+			RelationName:    h.cons.PersonRelationCN("crt", rt),
+		})
+	}
+	if err := rrows.Err(); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	rrows.Close()
 
 	respOK(c, d)
 }
