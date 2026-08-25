@@ -105,6 +105,9 @@
 <div class="mx-auto max-w-6xl px-4 py-6">
   <header class="mb-4 flex flex-wrap items-center gap-4">
     <h1 class="text-xl font-bold">Bangumi 本地数据搜索</h1>
+    {#if svc?.version}
+      <span class="text-xs tabular-nums text-neutral-400" title="后端编译期注入的版本号（与发布标签一致）">v{svc.version}</span>
+    {/if}
     {#if svc}
       <span class="chip text-emerald-600 dark:text-emerald-400">
         服务正常{#if lastUpdate} · {lastUpdate.toLocaleTimeString('zh-CN', { hour12: false })}{/if}
