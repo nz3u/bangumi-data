@@ -4,6 +4,7 @@
   import PinyinMatch from 'pinyin-match'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { openDetail } from '../lib/detail.svelte.js'
 
   let idInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -204,7 +205,7 @@
             class="size-12 rounded-full bg-sky-100 text-lg font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300"
           />
           <div>
-            <a href={`https://bgm.tv/person/${data.person.id}`} target="_blank" rel="noreferrer" class="font-semibold text-sky-600 hover:underline dark:text-sky-400">{data.person.name}</a>
+            <button type="button" class="cursor-pointer font-semibold text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', data.person.id, data.person)}>{data.person.name}</button>
             <div class="mt-0.5 flex flex-wrap gap-1">
               <span class="chip">{data.person.type_name}</span>
               {#each data.person.career ?? [] as cb}
@@ -328,9 +329,9 @@
                     {#each g.works as w, i (w.id)}
                       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 {i % 2 === 1 ? 'bg-neutral-50 dark:bg-neutral-900/40' : 'bg-white/60 dark:bg-neutral-900/60'}">
                         <span class="shrink-0 text-xs tabular-nums text-neutral-400">{w.date || '—'}</span>
-                        <a href={`https://bgm.tv/subject/${w.id}`} target="_blank" rel="noreferrer" class="min-w-0 truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
+                        <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
                           title="{w.date || ''} {w.type_name}"
-                        >{w.name_cn || w.name}</a>
+                        >{w.name_cn || w.name}</button>
                         <span class="chip shrink-0">{w.type_name}</span>
                         <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
                           <span class="truncate">{roleText(w.roles) || '—'}</span>
