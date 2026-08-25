@@ -517,13 +517,12 @@
                       <a href={`https://bgm.tv/person/${col.person_id}`} target="_blank" rel="noreferrer" class="font-medium text-sky-600 hover:underline dark:text-sky-400">{col.name}</a>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
-                        <a class="ml-auto"></a>
                         {#if !subjExpanded(col.person_id)}
-                          <small class="text-[11px] text-neutral-400">前 {COLLAB_PREVIEW_N} / {col.subjects.length} 条</small>
+                          <small class="ml-auto text-[11px] text-neutral-400">前 {COLLAB_PREVIEW_N} / {col.subjects.length} 条</small>
                         {/if}
                         <button
                           type="button"
-                          class="inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sky-600 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+                          class="{subjExpanded(col.person_id) ? 'ml-auto' : ''} inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sky-600 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
                           title={subjExpanded(col.person_id) ? '收起合作条目' : `展开全部 ${col.subjects.length} 条合作条目`}
                           aria-label={subjExpanded(col.person_id) ? `收起 ${col.name} 的合作条目` : `展开 ${col.name} 的全部 ${col.subjects.length} 条合作条目`}
                           onclick={() => toggleSubj(col.person_id)}

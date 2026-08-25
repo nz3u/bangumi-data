@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { Router, Route, navigate, listen } from 'svelte5-router'
   import Tabs from './components/Tabs.svelte'
   import ThemeToggle from './components/ThemeToggle.svelte'
   import SubjectsView from './views/SubjectsView.svelte'
@@ -11,15 +12,22 @@
   import { health, stats } from './lib/api.js'
 
   const tabs = [
-    { key: 'collaborations', label: '人物合作' },
-    { key: 'pairworks', label: '双人合作' },
-    { key: 'singleworks', label: '单人作品' },
-    { key: 'subjects', label: '条目搜索' },
-    { key: 'persons', label: '人物搜索' },
-    { key: 'characters', label: '角色搜索' }
+    { key: 'collaborations', label: '人物合作', path: '/collaborations' },
+    { key: 'pairworks', label: '双人合作', path: '/pairworks' },
+    { key: 'singleworks', label: '单人作品', path: '/singleworks' },
+    { key: 'subjects', label: '条目搜索', path: '/subjects' },
+    { key: 'persons', label: '人物搜索', path: '/persons' },
+    { key: 'characters', label: '角色搜索', path: '/characters' }
   ]
+  const DEFAULT_PATH = '/collaborations'
 
-  let active = $state('collaborations')
+  // 路径 -> 页面标题；根路径与未知路径均视为默认页
+  const titles = new Map(tabs.map((t) => [t.path, t.label]))
+  const knownPaths = new Set(['/', ...tabs.map((t) => t.path)])
+  function titleOf(pathname) {
+    return titles.get(pathname) ?? titles.get(DEFAULT_PATH)
+  }
+
   let svc = $state(null)
   let st = $state(null)
   let svcError = $state('')
@@ -65,11 +73,23 @@
     }
     document.addEventListener('visibilitychange', onVisibility)
 
+    // 路由副作用：同步页面标题；未知路径（含尾斜杠等）替换为默认页
+    const offRoute = listen(({ location }) => {
+      const p = location.pathname
+      const normalized = p.length > 1 ? p.replace(/\/+$/, '') || '/' : p
+      if (!knownPaths.has(normalized)) {
+        navigate(DEFAULT_PATH, { replace: true })
+        return
+      }
+      document.title = `${titleOf(normalized)} · Bangumi 本地数据搜索`
+    })
+
     pollOnce()
 
     return () => {
       clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
+      offRoute()
     }
   })
 
@@ -102,23 +122,19 @@
     <ThemeToggle />
   </header>
 
-  <Tabs items={tabs} active={active} onchange={(k) => (active = k)} />
+  <Router>
+    <Tabs items={tabs} />
 
-  <main class="mt-4">
-    {#if active === 'collaborations'}
-      <CollaborationsView />
-    {:else if active === 'pairworks'}
-      <PairWorksView />
-    {:else if active === 'singleworks'}
-      <SingleWorksView />
-    {:else if active === 'subjects'}
-      <SubjectsView />
-    {:else if active === 'persons'}
-      <PersonsView />
-    {:else}
-      <CharactersView />
-    {/if}
-  </main>
+    <main class="mt-4">
+      <Route path="/" component={CollaborationsView} />
+      <Route path="/collaborations" component={CollaborationsView} />
+      <Route path="/pairworks" component={PairWorksView} />
+      <Route path="/singleworks" component={SingleWorksView} />
+      <Route path="/subjects" component={SubjectsView} />
+      <Route path="/persons" component={PersonsView} />
+      <Route path="/characters" component={CharactersView} />
+    </main>
+  </Router>
 
   <footer class="mt-8 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
     接口文档见项目 README（REST API 一节）；开发模式：<code>cd web && npm run dev</code>（代理 /api 到 :8080）。
