@@ -25,7 +25,7 @@ type handler struct {
 // NewRouter 构建 gin 路由。
 // webDir 非空且存在时，优先托管磁盘上的前端目录（便于开发热更新）；
 // 否则回退到编译期内嵌的 web/dist（单二进制部署，无需额外参数）。
-// picSvc 为人物头像服务，可为 nil（头像接口返回未启用）。
+// picSvc 为图片解析服务（人物头像/条目封面/角色头像），可为 nil（图片接口返回未启用）。
 func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -40,6 +40,9 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics
 		api.GET("/stats", h.stats)
 		api.GET("/constants", h.constants)
 
+		// 图片解析（person=人物头像 / subject=条目封面 / character=角色头像）
+		api.GET("/pics/:kind/:id", h.pic)
+
 		// 条目
 		api.GET("/subjects/search", h.searchSubjects)
 		api.GET("/subjects/:id", h.getSubject)
@@ -48,7 +51,6 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics
 		// 人物
 		api.GET("/persons/search", h.searchPersons)
 		api.GET("/persons/:id", h.getPerson)
-		api.GET("/persons/:id/avatar", h.personAvatar)
 		api.GET("/persons/:id/works", h.getPersonWorks)
 		api.GET("/persons/:id/collaborators", h.getPersonCollaborators)
 		api.GET("/persons/:id/collaboration", h.getPersonCollaboration)

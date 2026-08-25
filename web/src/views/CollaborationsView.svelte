@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
@@ -6,6 +7,9 @@
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
+  import { onNavParams } from '../lib/nav.js'
+
+  const BASE = '/collaborations'
 
   let pidInput = $state('')
   let pidSel = $state(null) // 搜索提示选中的人物（此时输入框显示名字）
@@ -102,6 +106,18 @@
   function pickPerson(p) {
     search(p.id)
   }
+
+  // 跨标签页内部传参：其他页面（如人物详情抽屉）跳转过来时携带目标人物 ID。
+  // 挂载即注册处理器并领取在途参数；停留本页期间收到跳转则被直接调用。
+  onMount(() =>
+    onNavParams(BASE, (params) => {
+      const pid = Number(params?.id ?? 0)
+      if (!pid || pid <= 0 || pid === currentPid) return
+      pidInput = String(pid)
+      pidSel = null
+      search(pid)
+    })
+  )
 
   // 点击棋盘标签：切换选中并自动重新请求（回到第 1 页）
   function toggleTag(side, key) {
@@ -508,6 +524,7 @@
                   <PersonAvatar
                     pid={col.person_id}
                     name={col.name}
+                    size="grid"
                     class="size-14 rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
                     title="查看该人物的 collaborations"
                     onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
