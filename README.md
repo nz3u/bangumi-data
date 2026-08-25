@@ -99,6 +99,7 @@ bangumi version                                               版本号
 | `GET /api/health` | 健康检查 |
 | `GET /api/stats` | 各表行数统计 |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
+| `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, url}` |
 | `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |

@@ -9,6 +9,7 @@
   import CollaborationsView from './views/CollaborationsView.svelte'
   import PairWorksView from './views/PairWorksView.svelte'
   import SingleWorksView from './views/SingleWorksView.svelte'
+  import DetailDrawer from './components/DetailDrawer.svelte'
   import { health, stats } from './lib/api.js'
 
   const tabs = [
@@ -73,7 +74,7 @@
     }
     document.addEventListener('visibilitychange', onVisibility)
 
-    // 路由副作用：同步页面标题；未知路径（含尾斜杠等）替换为默认页
+    // 路由副作用：同步页面标题；未知路径（含尾斜杠等）替换为默认页。
     const offRoute = listen(({ location }) => {
       const p = location.pathname
       const normalized = p.length > 1 ? p.replace(/\/+$/, '') || '/' : p
@@ -135,6 +136,9 @@
       <Route path="/characters" component={CharactersView} />
     </main>
   </Router>
+
+  <!-- 全局唯一详情抽屉：由内部状态驱动（不写入地址栏），任何页面内打开均复用此实例 -->
+  <DetailDrawer />
 
   <footer class="mt-8 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
     接口文档见项目 README（REST API 一节）；开发模式：<code>cd web && npm run dev</code>（代理 /api 到 :8080）。
