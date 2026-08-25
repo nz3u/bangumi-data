@@ -1,5 +1,9 @@
 import { constants } from './api.js'
 
+// 条目/人物/角色三个搜索标签页的输入停顿自动搜索间隔：
+// 表单相对最近一次已执行的搜索快照有任何变更后，静默该时长即自动提交。
+export const AUTO_SEARCH_DEBOUNCE_MS = 1000
+
 let cache = null
 
 export async function loadConstants() {
