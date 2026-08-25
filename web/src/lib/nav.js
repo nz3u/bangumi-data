@@ -15,7 +15,14 @@ export function goToTab(path, params) {
   const p = params ?? null
   const set = consumers.get(path)
   if (set && set.size > 0) {
-    for (const fn of set) fn(p)
+    // 快照后逐个调用：单个处理器抛错不应阻断其余投递与跳转本身
+    for (const fn of [...set]) {
+      try {
+        fn(p)
+      } catch (e) {
+        console.error('goToTab handler failed:', e)
+      }
+    }
     if (window.location.pathname !== path) navigate(path)
   } else {
     stash.set(path, p)

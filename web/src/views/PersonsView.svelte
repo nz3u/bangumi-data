@@ -21,19 +21,24 @@
   // 完成后收到则立即重新搜索。
   let ready = false
 
-  onMount(async () => {
+  // onMount 必须保持同步回调才能返回注销函数：否则离开本页后处理器残留在
+  // nav.js 全局 consumers 中，后续跨页传参会被投递给已销毁的实例而丢失。
+  onMount(() => {
     // 跨标签页内部传参：搜索建议的「发现重名人物」提示等场景跳转过来时携带关键词。
-    onNavParams(BASE, (params) => {
+    const offNavParams = onNavParams(BASE, (params) => {
       const q = String(params?.q ?? '').trim()
       if (!q) return
       f.q = q
       appliedFormSig = formSig() // 同步快照，避免自动搜索重复触发
       if (ready) submit()
     })
-    cons = await loadConstants()
-    types = enumList(cons.person_types)
-    await doSearch({ q: f.q, type: f.type, page: 1, size: 30 }) // 挂载即展示第 1 页
-    ready = true
+    ;(async () => {
+      cons = await loadConstants()
+      types = enumList(cons.person_types)
+      await doSearch({ q: f.q, type: f.type, page: 1, size: 30 }) // 挂载即展示第 1 页
+      ready = true
+    })()
+    return offNavParams // 卸载时注销处理器
   })
 
   // 搜索由表单状态直接驱动：提交/翻页时按当前表单发起请求。
