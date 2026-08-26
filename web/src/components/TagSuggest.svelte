@@ -9,6 +9,7 @@
   import PinyinMatch from 'pinyin-match'
   import Highlight from './Highlight.svelte'
   import { loadTagPool } from '../lib/api.js'
+  import { fmtCompact } from '../lib/format.js'
 
   let {
     inputId,
@@ -21,7 +22,6 @@
   } = $props()
 
   const LIMIT = 12
-  const fmtCompact = new Intl.NumberFormat('zh-CN', { notation: 'compact' })
 
   let open = $state(false)
   let pool = $state(null) // [{name, cnt}]，按使用次数降序
@@ -181,7 +181,7 @@
               onmousemove={() => (active = i)}
             >
               <span class="min-w-0 flex-1 truncate"><Highlight text={t.name} q={query} /></span>
-              <small class="shrink-0 text-xs text-neutral-400">{fmtCompact.format(t.cnt)}</small>
+              <small class="shrink-0 text-xs text-neutral-400">{fmtCompact(t.cnt)}</small>
               <span class="chip shrink-0 {polarity === '-' ? 'line-through decoration-red-500 dark:decoration-red-400' : ''}">{polarity === '-' ? '排除' : '包含'}</span>
             </button>
           </li>

@@ -24,6 +24,13 @@ export function fmtDate(d) {
   return d || '—'
 }
 
+const compactFmt = new Intl.NumberFormat('zh-CN', { notation: 'compact' })
+
+// 紧凑数字（中文万/千单位）；0 或空返回空串，便于直接内联到标签后缀
+export function fmtCompact(n) {
+  return n > 0 ? compactFmt.format(n) : ''
+}
+
 export function fmtFavorite(f) {
   if (!f) return '—'
   const parts = []

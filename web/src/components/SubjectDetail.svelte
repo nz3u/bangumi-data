@@ -27,7 +27,7 @@
     <div class="mt-1.5 flex flex-wrap items-center gap-1">
       <span class="text-xs text-neutral-500 dark:text-neutral-400">Meta 标签：</span>
       {#each d.meta_tags ?? [] as m}
-        <span class="chip">{m}</span>
+        <span class="chip-meta">{m}</span>
       {/each}
     </div>
   </section>
