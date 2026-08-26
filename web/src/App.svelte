@@ -34,7 +34,7 @@
   let svcError = $state('')
   let lastUpdate = $state(null)
 
-  const POLL_MS = 10000
+  const POLL_MS = 60000
 
   async function refreshHealth() {
     try {
