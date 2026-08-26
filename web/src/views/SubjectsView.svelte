@@ -3,8 +3,9 @@
   import { searchSubjects } from '../lib/api.js'
   import { loadConstants, platformsFor, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
-  import Pagination from '../components/Pagination.svelte'
-  import { openDetail } from '../lib/detail.svelte.js'
+ import Pagination from '../components/Pagination.svelte'
+ import { openDetail } from '../lib/detail.svelte.js'
+ import { externalUrl } from '../lib/settings.svelte.js'
 
   const DEFAULTS = {
     q: '',
@@ -234,7 +235,7 @@
                 <td>{it.type_name}</td>
                 <td class="max-w-52 truncate">
                   {#if it.name_cn}
-                    <a href={`https://bgm.tv/subject/${it.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name_cn}</a>
+                    <a href={externalUrl('subject', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name_cn}</a>
                   {:else}
                     —
                   {/if}

@@ -1,4 +1,5 @@
 import { resolvePic } from './api.js'
+import { picHost } from './settings.svelte.js'
 
 // 统一的图片加载管理器（人物头像 / 条目封面 / 角色头像）。
 //
@@ -12,12 +13,20 @@ const RETRY_MAX_MS = 6000 // 单次重试间隔上限
 const MAX_ATTEMPTS = 20 // 单张图片最大尝试次数，超过标记失败
 
 // key 形如 `kind/id@size`（默认 l），同图片不同尺寸分别缓存。
-// 值为 { status: 'loading' | 'ok' | 'failed', url }
+// 值为 { status: 'loading' | 'ok' | 'failed', path }
+// path 为不含主机的 CDN 路径（后端只返回相对路径），展示时经 picUrl 拼接主机，
+// 因此切换图片主机设置后已缓存的图片无需重新请求即可即时生效。
 export const picStore = $state({})
 
 // 组件侧读取缓存：与 requestPic 的键规则保持一致。
 export function picInfo(kind, id, size = 'l') {
   return picStore[`${kind}/${String(id)}@${size || 'l'}`] ?? null
+}
+
+// 由缓存条目拼出可直接展示的完整 URL（响应式：随设置中的图片主机实时变化）
+export function picUrl(info) {
+  if (!info || info.status !== 'ok' || !info.path) return ''
+  return `https://${picHost()}${info.path}`
 }
 
 let queue = [] // 待处理的队列 key（包含等待重试的）
@@ -29,7 +38,7 @@ export function requestPic(kind, id, size = 'l') {
   if (!kind || !id || String(id) === 'null') return
   const key = `${kind}/${String(id)}@${size || 'l'}`
   if (picStore[key]) return
-  picStore[key] = { status: 'loading', url: '' }
+  picStore[key] = { status: 'loading', path: '' }
   meta.set(key, { attempts: 0, readyAt: 0 })
   queue.push(key)
   pump()
@@ -54,7 +63,7 @@ async function pump() {
         const m = meta.get(key)
         m.attempts += 1
         if (m.attempts >= MAX_ATTEMPTS) {
-          picStore[key] = { status: 'failed', url: '' }
+          picStore[key] = { status: 'failed', path: '' }
           meta.delete(key)
         } else {
           m.readyAt = Date.now() + Math.min(RETRY_BASE_MS * m.attempts, RETRY_MAX_MS)
@@ -79,12 +88,12 @@ async function attemptOnce(key) {
   const size = key.slice(at + 1)
   try {
     const d = await resolvePic(kind, id, size)
-    if (d?.status === 'ok' && d.url) {
-      picStore[key] = { status: 'ok', url: d.url }
+    if (d?.status === 'ok' && d.path) {
+      picStore[key] = { status: 'ok', path: d.path }
       return 'ok'
     }
     if (d?.status === 'failed') {
-      picStore[key] = { status: 'failed', url: '' }
+      picStore[key] = { status: 'failed', path: '' }
       return 'failed'
     }
   } catch {

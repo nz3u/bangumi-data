@@ -7,6 +7,7 @@
   import CharacterDetail from './CharacterDetail.svelte'
   import SectionNav from './SectionNav.svelte'
   import { detailDrawer, closeDetail, peekBrief } from '../lib/detail.svelte.js'
+  import { externalUrl } from '../lib/settings.svelte.js'
 
   // 全局唯一详情抽屉：依据内部状态（detailDrawer）加载并渲染对应实体详情，
   // 实体切换时原地替换内容；内部实体跳转统一走 openDetail（不写入地址栏）。
@@ -70,8 +71,8 @@
   {#if kind && id}
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
       <h3 class="min-w-0 max-w-full truncate text-base font-semibold">
-        <!-- 唯一保留的外链：指向 bgm.tv 的标题 -->
-        <a href={`https://bgm.tv/${kind}/${id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">
+        <!-- 唯一保留的外链：指向设置中配置的 Bangumi 站点 -->
+        <a href={externalUrl(kind, id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">
           {head ? head.name_cn || head.name : `${LABELS[kind] ?? ''}加载中…`}
         </a>
       </h3>

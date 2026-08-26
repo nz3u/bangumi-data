@@ -1,6 +1,6 @@
 <script>
   import { onDestroy } from 'svelte'
-  import { requestPic, picInfo } from '../lib/pics.svelte.js'
+  import { requestPic, picInfo, picUrl } from '../lib/pics.svelte.js'
 
   // 统一的人物头像组件：
   // - 懒加载：进入视口附近才向全局队列发起解析请求
@@ -23,8 +23,10 @@
 
   const info = $derived(pid != null ? picInfo('person', pid, size) : null)
   const initial = $derived((name || '?').slice(0, 1))
-  // 解析中，或 URL 已就绪但图片本体仍在下载 → 转圈
-  const busy = $derived(info?.status === 'loading' || (!!info?.url && imgState === 'idle'))
+  // 完整 URL 由前端拼接（响应式）：随设置中的图片主机实时变化
+  const src = $derived(picUrl(info))
+  // 解析中，或路径已就绪但图片本体仍在下载 → 转圈
+  const busy = $derived(info?.status === 'loading' || (!!info?.path && imgState === 'idle'))
   // 后端确认无图/抓取失败，或图片请求出错 → 打叉
   const bad = $derived(info?.status === 'failed' || imgState === 'broken')
 
@@ -49,9 +51,9 @@
 
   onDestroy(() => clearTimeout(spinnerTimer))
 
-  // 头像 URL 变化后重置图片加载状态
+  // 头像路径变化后重置图片加载状态
   $effect(() => {
-    void info?.url
+    void info?.path
     imgState = 'idle'
   })
 
@@ -80,7 +82,7 @@
   <span class="absolute inset-0 flex items-center justify-center">{initial}</span>
   {#if info?.status === 'ok' && imgState !== 'broken'}
     <img
-      src={info.url}
+      src={src}
       alt={name}
       loading="lazy"
       decoding="async"

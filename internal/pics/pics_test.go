@@ -124,6 +124,49 @@ func TestOpenUpgradeLegacyDB(t *testing.T) {
 	}
 }
 
+// TestResolvePathAndSizes ResolvePath 只返回不含主机的相对路径，
+// 各尺寸前缀与 BuildURL 的主机之后部分完全一致。
+func TestResolvePathAndSizes(t *testing.T) {
+	svc, err := Open(filepath.Join(t.TempDir(), "bgm_pic.db"), "")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer svc.Close()
+	if err := svc.store(kinds[KindSubject], 7, "b0/e3/x.jpg"); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+
+	cases := []struct{ size, want string }{
+		{"", "/pic/cover/l/b0/e3/x.jpg"},
+		{"l", "/pic/cover/l/b0/e3/x.jpg"},
+		{"large", "/pic/cover/l/b0/e3/x.jpg"},
+		{"m", "/r/200/pic/cover/l/b0/e3/x.jpg"},
+		{"medium", "/r/200/pic/cover/l/b0/e3/x.jpg"},
+		{"s", "/r/100/pic/cover/l/b0/e3/x.jpg"},
+		{"small", "/r/100/pic/cover/l/b0/e3/x.jpg"},
+		{"g", "/r/100x100/pic/cover/l/b0/e3/x.jpg"},
+		{"grid", "/r/100x100/pic/cover/l/b0/e3/x.jpg"},
+	}
+	for _, c := range cases {
+		st, p := svc.ResolvePath(KindSubject, 7, c.size)
+		if st != "ok" || p != c.want {
+			t.Errorf("ResolvePath(subject,7,%q) = (%q,%q), want (ok,%q)", c.size, st, p, c.want)
+		}
+		if full := BuildURL(KindSubject, "b0/e3/x.jpg", c.size); full != "https://lain.bgm.tv"+c.want {
+			t.Errorf("BuildURL(size=%q) 与 PathURL 拼接不一致: %q", c.size, full)
+		}
+	}
+
+	// 未配置 Key 且无记录：直接 failed、空路径
+	if st, p := svc.ResolvePath(KindPerson, 999, ""); st != "failed" || p != "" {
+		t.Errorf("ResolvePath 无记录 = (%q,%q), want (failed,\"\")", st, p)
+	}
+	// 非法类型
+	if st, p := svc.ResolvePath("book", 1, ""); st != "failed" || p != "" {
+		t.Errorf("ResolvePath(book) = (%q,%q), want (failed,\"\")", st, p)
+	}
+}
+
 // TestResolveRoundTrip 写入相对路径后 Resolve 应返回 ok 及按类型/尺寸拼装的 URL。
 func TestResolveRoundTrip(t *testing.T) {
 	svc, err := Open(filepath.Join(t.TempDir(), "bgm_pic.db"), "")
