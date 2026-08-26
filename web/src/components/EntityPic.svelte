@@ -1,5 +1,5 @@
 <script>
-  import { requestPic, picInfo } from '../lib/pics.svelte.js'
+  import { requestPic, picInfo, picUrl } from '../lib/pics.svelte.js'
 
   // 实体图片组件（条目封面 / 人物头像 / 角色头像）：
   // - 经全局队列调用统一图片解析接口，结果跨页缓存共享
@@ -21,9 +21,11 @@
   let imgState = $state('idle') // idle | loaded | broken
 
   const info = $derived(id != null ? picInfo(kind, id, size) : null)
-  const busy = $derived(info?.status === 'loading' || (!!info?.url && imgState === 'idle'))
+  const busy = $derived(info?.status === 'loading' || (!!info?.path && imgState === 'idle'))
   const bad = $derived(info?.status === 'failed' || imgState === 'broken')
   const loaded = $derived(info?.status === 'ok' && imgState === 'loaded')
+  // 完整 URL 由前端拼接（响应式）：切换设置中的图片主机即时生效
+  const src = $derived(picUrl(info))
 
   // 加载中/失败：固定小占位框；加载完成：包裹图片自然尺寸（受最大宽高约束）
   const cardCls = $derived(
@@ -34,7 +36,7 @@
 
   // URL 变化后重置图片加载状态
   $effect(() => {
-    void info?.url
+    void info?.path
     imgState = 'idle'
   })
 
@@ -62,7 +64,7 @@
 {#snippet inner()}
   {#if info?.status === 'ok' && imgState !== 'broken'}
     <img
-      src={info.url}
+      src={src}
       alt={alt}
       loading="lazy"
       decoding="async"

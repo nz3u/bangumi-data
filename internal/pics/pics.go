@@ -130,19 +130,32 @@ func (s *Service) HasKey() bool { return s != nil && s.key != "" }
 // 空串（图片功能停用，Resolve 恒为 failed）。
 func LoadAPIKey(dataDir string) string { return config.LoadAPIKey(dataDir) }
 
-// Resolve 解析指定类型图片的状态与 URL（URL 仅在 ok 时非空）。
+// Resolve 解析指定类型图片的状态与完整 URL（含 lain CDN 主机，兼容旧调用方）。
 // size 决定返回的 CDN 尺寸（l/m/s/g，空或未知值按 l 处理）。
 func (s *Service) Resolve(kind string, id int64, size string) (status, url string) {
+	status, rel := s.resolveRel(kind, id)
+	return status, BuildURL(kind, rel, size)
+}
+
+// ResolvePath 同 Resolve，但返回不含主机的资源路径
+// （如 /pic/crt/l/a6/e8/1.jpg），由前端按自身设置拼接主机。
+func (s *Service) ResolvePath(kind string, id int64, size string) (status, path string) {
+	status, rel := s.resolveRel(kind, id)
+	return status, PathURL(kind, rel, size)
+}
+
+// resolveRel 查询/触发抓取，返回状态与相对路径（rel 为空表示无图或失败）。
+func (s *Service) resolveRel(kind string, id int64) (status, rel string) {
 	conf, ok := kinds[kind]
 	if !ok {
 		return "failed", ""
 	}
 	key := picKey{kind: kind, id: id}
-	var rel string
-	err := s.conn.QueryRow(`SELECT url FROM `+conf.table+` WHERE id = ?`, id).Scan(&rel)
+	var stored string
+	err := s.conn.QueryRow(`SELECT url FROM `+conf.table+` WHERE id = ?`, id).Scan(&stored)
 	switch {
-	case err == nil && rel != "":
-		return "ok", BuildURL(kind, rel, size)
+	case err == nil && stored != "":
+		return "ok", stored
 	case err == nil:
 		return "failed", "" // 已确认无图片（空标记），无需再抓
 	case !errors.Is(err, sql.ErrNoRows):
@@ -292,24 +305,31 @@ func extractRel(rawURL, picBase string) string {
 	return rel
 }
 
-// BuildURL 输入类型、保存的相对路径与尺寸，返回可直接展示的完整 URL。
+// PathURL 输入类型、保存的相对路径与尺寸，返回不含主机的 CDN 路径。
 // kind 取 person / subject / character；size 支持 l/large、m/medium、
 // s/small、g/grid，默认 l。
-func BuildURL(kind, rel, size string) string {
+func PathURL(kind, rel, size string) string {
 	conf, ok := kinds[kind]
 	if !ok || rel == "" {
 		return ""
 	}
-	var prefix string
 	switch strings.ToLower(size) {
 	case "m", "medium":
-		prefix = cdnHost + "/r/200" + conf.picBase + "l/"
+		return "/r/200" + conf.picBase + "l/" + rel
 	case "s", "small":
-		prefix = cdnHost + "/r/100" + conf.picBase + "l/"
+		return "/r/100" + conf.picBase + "l/" + rel
 	case "g", "grid":
-		prefix = cdnHost + "/r/100x100" + conf.picBase + "l/"
+		return "/r/100x100" + conf.picBase + "l/" + rel
 	default:
-		prefix = cdnHost + conf.picBase + "l/"
+		return conf.picBase + "l/" + rel
 	}
-	return prefix + rel
+}
+
+// BuildURL 输入类型、保存的相对路径与尺寸，返回可直接展示的完整 URL。
+func BuildURL(kind, rel, size string) string {
+	p := PathURL(kind, rel, size)
+	if p == "" {
+		return ""
+	}
+	return cdnHost + p
 }

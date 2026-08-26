@@ -1,6 +1,7 @@
 <script>
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
   import { openDetail } from '../lib/detail.svelte.js'
+  import { externalUrl } from '../lib/settings.svelte.js'
   import EntityPic from './EntityPic.svelte'
 
   let { d, id } = $props()
@@ -30,7 +31,7 @@
       {/each}
     </div>
   </section>
-  <EntityPic kind="subject" {id} href={`https://bgm.tv/subject/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
+  <EntityPic kind="subject" {id} href={externalUrl('subject', id)} alt={d.name_cn || d.name} class="max-w-40" />
 </div>
 
 <section class="mb-4" data-sec-label="简介">

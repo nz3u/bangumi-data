@@ -11,6 +11,7 @@
   import SingleWorksView from './views/SingleWorksView.svelte'
   import DetailDrawer from './components/DetailDrawer.svelte'
   import DbBadge from './components/DbBadge.svelte'
+  import SettingsPanel from './components/SettingsPanel.svelte'
   import { health, stats, dbInfo } from './lib/api.js'
   import GitHub from './components/GitHub.svelte';
 
@@ -136,6 +137,7 @@
       </div>
     {/if}
     <span class="ml-auto text-xs text-neutral-500">本地 SQLite 数据 · FTS5 检索</span>
+    <SettingsPanel />
     <GitHub />
     <ThemeToggle />
   </header>

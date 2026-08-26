@@ -4,8 +4,9 @@
   import { loadConstants, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { careerCn } from '../lib/format.js'
   import { onNavParams } from '../lib/nav.js'
-  import Pagination from '../components/Pagination.svelte'
-  import { openDetail } from '../lib/detail.svelte.js'
+import Pagination from '../components/Pagination.svelte'
+import { openDetail } from '../lib/detail.svelte.js'
+import { externalUrl } from '../lib/settings.svelte.js'
 
   const BASE = '/persons'
 
@@ -134,8 +135,8 @@
           <tbody>
             {#each result.items as it (it.id)}
               <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail('person', it.id, it)}>
-                <td class="text-neutral-500"><a href={`https://bgm.tv/person/${it.id}`} target="_blank" rel="noreferrer" class="hover:underline" onclick={(e) => e.stopPropagation()}>{it.id}</a></td>
-                <td class="max-w-64 truncate"><a href={`https://bgm.tv/person/${it.id}`} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name}</a></td>
+                <td class="text-neutral-500"><a href={externalUrl('person', it.id)} target="_blank" rel="noreferrer" class="hover:underline" onclick={(e) => e.stopPropagation()}>{it.id}</a></td>
+                <td class="max-w-64 truncate"><a href={externalUrl('person', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name}</a></td>
                 <td class="max-w-52 truncate">{it.name_cn || '—'}</td>
                 <td>{it.type_name}</td>
                 <td>

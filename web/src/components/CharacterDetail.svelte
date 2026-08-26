@@ -1,6 +1,7 @@
 <script>
   import { fmtScore } from '../lib/format.js'
   import { openDetail } from '../lib/detail.svelte.js'
+  import { externalUrl } from '../lib/settings.svelte.js'
   import EntityPic from './EntityPic.svelte'
   import InfoboxList from './InfoboxList.svelte'
 
@@ -17,7 +18,7 @@
     </dl>
     <p class="mt-1.5 truncate text-sm text-neutral-500 dark:text-neutral-400" title={d.name}>原名：{d.name}</p>
   </section>
-  <EntityPic kind="character" {id} href={`https://bgm.tv/character/${id}`} alt={d.name_cn || d.name} class="max-w-40" />
+  <EntityPic kind="character" {id} href={externalUrl('character', id)} alt={d.name_cn || d.name} class="max-w-40" />
 </div>
 
 <InfoboxList fields={d.infobox ?? []} />

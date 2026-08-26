@@ -102,6 +102,8 @@ docker compose up -d bangumi
 - **明暗主题**：右上角切换，跟随系统记忆
 - **数据版本徽标**：右下角固定显示数据库导出文件的创建时间；config.json 无版本记录时显示「旧版本」；
   serve 启动即后台对比 Archive 最新导出，检测到新版本时徽标琥珀色高亮提示「可更新」（日志同步提醒）
+- **站点设置**：页头齿轮按钮（GitHub/主题切换左侧）——外部链接镜像站（bgm.tv/bangumi.tv/chii.in/自定义）
+  与图片接口主机（lain.bgm.tv/自定义），配置实时保存在浏览器本地，改动即时生效
 
 构建产物 `web/dist` 通过 `go:embed` 内嵌进二进制，单文件即可同时提供 API 与页面。
 `serve` 时若指定了 `-web` 目录（且存在）则优先托管磁盘目录，否则回退到内嵌页面。
@@ -145,7 +147,7 @@ bangumi version                                               版本号
 | `GET /api/stats` | 各表行数统计 |
 | `GET /api/dbinfo` | 数据库版本状态：本地版本记录（无记录=旧版本）、上游最新导出、是否落后（serve 启动即后台检查，之后每 6h 复查；前端右下角徽标与「可更新」提醒数据源） |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
-| `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, url}` |
+| `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, path}`，path 为不含主机的 CDN 路径，由前端按设置拼接图片主机（默认 lain.bgm.tv，可在前端设置面板自定义） |
 | `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |
