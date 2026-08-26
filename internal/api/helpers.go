@@ -89,6 +89,7 @@ type subjectBrief struct {
 	Score     float64        `json:"score"`
 	Rank      int            `json:"rank"`
 	Tags      []model.Tag    `json:"tags,omitempty"`
+	MetaTags  []string       `json:"meta_tags,omitempty"`
 	Favorite  model.Favorite `json:"favorite"`
 }
 
@@ -98,11 +99,11 @@ func (h *handler) scanSubjectBrief(row interface{ Scan(...any) error }, total *i
 	var (
 		id, typ, platform, rank int64
 		name, nameCN, date      string
-		tags, fav               string
+		tags, fav, mt           string
 		nsfw                    int64
 		score                   float64
 	)
-	dest := []any{&id, &typ, &name, &nameCN, &platform, &date, &nsfw, &score, &rank, &tags, &fav}
+	dest := []any{&id, &typ, &name, &nameCN, &platform, &date, &nsfw, &score, &rank, &tags, &mt, &fav}
 	if total != nil {
 		dest = append(dest, total)
 	}
@@ -114,8 +115,8 @@ func (h *handler) scanSubjectBrief(row interface{ Scan(...any) error }, total *i
 		Name: name, NameCN: nameCN,
 		Platform: int(platform), PlatformN: h.cons.PlatformCN(int(typ), int(platform)),
 		Date: date, NSFW: nsfw == 1, Score: score, Rank: int(rank),
-		Tags: parseTags(tags), Favorite: parseFavorite(fav),
+		Tags: parseTags(tags), MetaTags: parseStrings(mt), Favorite: parseFavorite(fav),
 	}, nil
 }
 
-const subjectBriefCols = `s.id, s.type, s.name, s.name_cn, s.platform, s.date, s.nsfw, s.score, s.rank, s.tags, s.favorite`
+const subjectBriefCols = `s.id, s.type, s.name, s.name_cn, s.platform, s.date, s.nsfw, s.score, s.rank, s.tags, s.meta_tags, s.favorite`

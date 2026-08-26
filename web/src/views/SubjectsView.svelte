@@ -8,7 +8,7 @@
     SUBJECT_AUTO_SEARCH_DEBOUNCE_MS,
     TAG_BOX_IDLE_SEARCH_MS
   } from '../lib/constants.js'
-  import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
+  import { fmtScore, fmtRank, fmtDate, fmtFavorite, fmtCompact } from '../lib/format.js'
  import Pagination from '../components/Pagination.svelte'
  import Highlight from '../components/Highlight.svelte'
  import TagSuggest from '../components/TagSuggest.svelte'
@@ -100,6 +100,7 @@
     result = null
     try {
       result = await searchSubjects(p)
+      tagExpandOverrides = {} // 新结果回到默认收拢状态
     } catch (e) {
       error = e.message
     } finally {
@@ -125,6 +126,55 @@
   function changePage(p) {
     doSearch({ ...f, page: p })
   }
+
+  // ---- 标签列展示 ----
+  // 元标签在前（着重样式），其余标签在后并附使用次数；默认只展示前
+  // TAGS_PREVIEW_N 个，行内可展开/收起，表头另有整体展开/收拢按钮。
+  const TAGS_PREVIEW_N = 12
+
+  let allTagsExpanded = $state(false) // 全局展开状态
+  let tagExpandOverrides = $state({}) // 单行覆盖：subject_id -> 是否展开
+
+  // 合并元标签与普通标签：元标签在前
+  function rowTags(it) {
+    const metas = (it.meta_tags ?? []).map((name) => ({ name, cnt: 0, meta: true }))
+    const tags = (it.tags ?? []).map((t) => ({ name: t.name, cnt: t.count ?? 0, meta: false }))
+    return [...metas, ...tags]
+  }
+
+  // 当前行实际渲染的标签（收拢时截取前 TAGS_PREVIEW_N 个）
+  function rowTagsShown(it) {
+    const list = rowTags(it)
+    return rowTagsExpanded(it.id) ? list : list.slice(0, TAGS_PREVIEW_N)
+  }
+
+  function rowTagsExpanded(id) {
+    return tagExpandOverrides[id] ?? allTagsExpanded
+  }
+
+  function toggleRowTags(id) {
+    tagExpandOverrides = { ...tagExpandOverrides, [id]: !rowTagsExpanded(id) }
+  }
+
+  function toggleAllTags() {
+    allTagsExpanded = !allTagsExpanded
+    tagExpandOverrides = {} // 清空单行覆盖，回到全局一致状态
+  }
+
+  // 搜索参数中的正标签集合：用于在结果标签列高亮命中项
+  const positiveTagSet = $derived.by(() => {
+    const set = new Set()
+    for (const part of String(f.tag ?? '').split(/[,，]/)) {
+      const t = part.trim()
+      if (!t || t === '+' || t === '-' || t.startsWith('-')) continue
+      set.add(t.startsWith('+') ? t.slice(1).trim() : t)
+    }
+    return set
+  })
+
+  // 正标签高亮样式（与关键词着重号一致的黄色下划线）
+  const POS_MARK =
+    'underline decoration-2 underline-offset-2 decoration-yellow-500 dark:decoration-yellow-400'
 </script>
 
 <div class="grid gap-4">
@@ -243,8 +293,14 @@
     <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
   {:else if result}
     <div class="rounded-lg border border-neutral-200 bg-white/60 dark:border-neutral-800 dark:bg-neutral-900/60">
-      <div class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+      <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <Pagination total={result.total} page={result.page} size={result.size} onchange={changePage} />
+        <button
+          type="button"
+          class="btn-mini shrink-0"
+          disabled={!result.items.length}
+          onclick={toggleAllTags}
+        >{allTagsExpanded ? '收起全部标签' : '展开全部标签'}</button>
       </div>
       <div class="overflow-x-auto p-2">
         <table class="tbl">
@@ -279,11 +335,24 @@
                 <td>{fmtDate(it.date)}</td>
                 <td class="text-amber-600 dark:text-amber-400">{fmtScore(it.score)}</td>
                 <td>{fmtRank(it.rank)}</td>
-                <td class="max-w-60">
-                  <div class="flex flex-wrap gap-1">
-                    {#each (it.tags ?? []).slice(0, 5) as t}
-                      <span class="chip">{t.name}</span>
+                <td class="max-w-96">
+                  <div class="flex flex-wrap items-center gap-1">
+                    {#each rowTagsShown(it) as t (`${t.meta ? 'm' : 't'}:${t.name}`)}
+                      <span class="{t.meta ? 'chip-meta' : 'chip'} {positiveTagSet.has(t.name) ? POS_MARK : ''}">
+                        {t.name}{#if !t.meta && t.cnt > 0}<small class="ml-0.5 text-neutral-400 dark:text-neutral-500" title="{t.name} 被引用 {t.cnt} 次">{fmtCompact(t.cnt)}</small>{/if}
+                      </span>
                     {/each}
+                    {#if rowTags(it).length > TAGS_PREVIEW_N || rowTagsExpanded(it.id)}
+                      <button
+                        type="button"
+                        class="btn-mini"
+                        title={rowTagsExpanded(it.id) ? '收起标签' : `展开全部 ${rowTags(it).length} 个标签`}
+                        onclick={(e) => {
+                          e.stopPropagation() // 不触发行点击的详情抽屉
+                          toggleRowTags(it.id)
+                        }}
+                      >{rowTagsExpanded(it.id) ? '收起' : `+${rowTags(it).length - TAGS_PREVIEW_N}`}</button>
+                    {/if}
                   </div>
                 </td>
                 <td class="max-w-48 text-xs text-neutral-500 dark:text-neutral-400">{fmtFavorite(it.favorite)}</td>
