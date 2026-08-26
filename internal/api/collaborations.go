@@ -108,14 +108,14 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 		)`, []any{id, id}
 	}
-	joinSubjects, cond, condArgs := "", "1=1", []any{}
+	joinSubjects, cond, condArgs := "", "1=0", []any{}
 	if len(fb.staff) > 0 {
 		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
 		cond, condArgs = staffConds("sb.type", "sp.position", fb.staff)
 	}
-	cvCond := "1=1"
-	if !fb.cv {
-		cvCond = "1=0"
+	cvCond := "1=0"
+	if fb.cv {
+		cvCond = "1=1"
 	}
 	sql := `pairs AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid
@@ -261,7 +261,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	}
 
 	if len(items) > 0 {
-		if err := h.attachCollabSubjects(id, items, appSQL, appArgs); err != nil {
+		if err := h.attachCollabSubjects(id, items, appSQL, appArgs, fb); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
@@ -278,16 +278,36 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 
 // attachCollabSubjects 为当前页的合作人物填充共同条目明细：
 // 制作职位 + 出演角色（CV），逐行归并到 (合作人物, 条目)，职位 id 用常量文本替换。
-// appSQL/appArgs 为棋盘筛选后组装的 app CTE，保证明细与筛选口径一致。
-func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL string, appArgs []any) error {
+// appSQL/appArgs 为 positions_a 筛选后组装的 app CTE；fb（positions_b）直接作用于
+// 明细行，条件与 pairs CTE 同口径，保证条目集合与统计次数一致，
+// 不会混入与合作人物所选职位无关的作品。
+func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL string, appArgs []any, fb collabRoleFilter) error {
 	index := map[int64]int{}
 	inArgs := make([]any, 0, len(items))
 	for i, it := range items {
 		index[it.PersonID] = i
 		inArgs = append(inArgs, it.PersonID)
 	}
-	queryArgs := append(append([]any{}, appArgs...), id)
-	queryArgs = append(queryArgs, inArgs...)
+
+	// 明细行筛选与 pairs 同口径：fb 为空时全部保留；
+	// 否则制作行须命中所选职位组合、CV 行仅在勾选 cv 标签时保留。
+	joinSubjects, staffCond, staffArgs := "", "1=1", []any{}
+	if !fb.empty() {
+		staffCond = "1=0"
+		if len(fb.staff) > 0 {
+			joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
+			staffCond, staffArgs = staffConds("sb.type", "sp.position", fb.staff)
+		}
+	}
+	cvCond := "1=1"
+	if !fb.empty() && !fb.cv {
+		cvCond = "1=0"
+	}
+
+	// 参数按 SQL 文本中占位符出现顺序排列：
+	// app CTE 参数 → 制作分支 IN(当前页人物) → 职位条件 → 出演分支 IN(当前页人物)
+	queryArgs := append(append([]any{}, appArgs...), inArgs...)
+	queryArgs = append(queryArgs, staffArgs...)
 	queryArgs = append(queryArgs, inArgs...)
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(items)), ",")
@@ -296,12 +316,15 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	rows, err := h.db.Query(`WITH `+appSQL+`,
 		detail AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid, sp.position AS position, 0 AS is_cv, '' AS char_name
-			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)
+			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)`+
+		joinSubjects+`
+			WHERE `+staffCond+`
 			UNION ALL
 			SELECT pc.person_id, ap.subject_id, -1, 1, COALESCE(ch.name, '')
 			FROM app ap
 			CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id IN (`+placeholders+`)
 			LEFT JOIN characters ch ON ch.id = pc.character_id
+			WHERE `+cvCond+`
 		)
 		SELECT d.other, d.position, d.is_cv, d.char_name, s.id, s.name, s.name_cn, s.type, s.date
 		FROM detail d CROSS JOIN subjects s ON s.id = d.sid`, queryArgs...)
