@@ -166,7 +166,7 @@
         />
       </div>
       <div>
-        <label class="label" for="subject-metatag">Meta 标签（同上组合语法）</label>
+        <label class="label" for="subject-metatag">元标签（同上语法，经验证的分类标签）</label>
         <TagSuggest
           inputId="subject-metatag"
           kind="meta"
