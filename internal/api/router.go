@@ -12,6 +12,7 @@ import (
 
 	"bangumi-subject-go/internal/common"
 	"bangumi-subject-go/internal/pics"
+	"bangumi-subject-go/internal/update"
 	"bangumi-subject-go/web"
 )
 
@@ -20,7 +21,8 @@ type handler struct {
 	db      *sql.DB
 	cons    *common.Constants
 	pics    *pics.Service
-	version string // 编译期注入的版本号（随 /api/health 返回）
+	version string                  // 编译期注入的版本号（随 /api/health 返回）
+	dbver   *update.VersionChecker  // 数据库版本检查（/api/dbinfo），可为 nil
 }
 
 // NewRouter 构建 gin 路由。
@@ -28,19 +30,21 @@ type handler struct {
 // webDir 非空且存在时，优先托管磁盘上的前端目录（便于开发热更新）；
 // 否则回退到编译期内嵌的 web/dist（单二进制部署，无需额外参数）。
 // picSvc 为图片解析服务（人物头像/条目封面/角色头像），可为 nil（图片接口返回未启用）。
-func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service, version string) *gin.Engine {
+// dbVer 为数据库版本检查服务，可为 nil（/api/dbinfo 返回未知状态）。
+func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics.Service, version string, dbVer *update.VersionChecker) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware())
 
-	h := &handler{db: conn, cons: cons, pics: picSvc, version: version}
+	h := &handler{db: conn, cons: cons, pics: picSvc, version: version, dbver: dbVer}
 
 	api := r.Group("/api")
 	{
 		api.GET("/health", h.health)
 		api.GET("/stats", h.stats)
 		api.GET("/constants", h.constants)
+		api.GET("/dbinfo", h.dbInfo)
 
 		// 图片解析（person=人物头像 / subject=条目封面 / character=角色头像）
 		api.GET("/pics/:kind/:id", h.pic)

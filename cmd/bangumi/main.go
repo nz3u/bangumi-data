@@ -22,6 +22,7 @@ import (
 	"bangumi-subject-go/internal/db"
 	"bangumi-subject-go/internal/importer"
 	"bangumi-subject-go/internal/pics"
+	"bangumi-subject-go/internal/update"
 )
 
 	// 版本号由发布流水线在编译时通过 -ldflags "-X main.version=x.y.z" 注入
@@ -37,6 +38,8 @@ func main() {
 	switch os.Args[1] {
 	case "import":
 		err = cmdImport(os.Args[2:])
+	case "update":
+		err = cmdUpdate(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
 	case "version", "-v", "--version":
@@ -56,6 +59,7 @@ func usage() {
 
 用法:
   bangumi import -file <dump.zip 或目录> [选项]   导入数据到本地 SQLite
+  bangumi update [选项]                          下载最新导出并导入/更新数据库
   bangumi serve [选项]                           启动查询 API 服务
   bangumi version                                显示版本
 
@@ -66,7 +70,8 @@ func usage() {
   BANGUMI_COMMON   common yaml 目录 (默认使用内嵌常量)
   BANGUMI_API_KEY  next.bgm.tv API Key（人物头像；也可放 data/config.json）
 
-运行 import 子命令查看其选项。
+数据库版本记录于 data/config.json 的 database 字段；update 命令据此判断
+当前库是否落后于 Archive 最新导出。运行 import/update 子命令查看其选项。
 `)
 }
 
@@ -100,24 +105,78 @@ func cmdImport(args []string) error {
 		*dbPath = "data/bangumi.db"
 	}
 
-	if _, err := common.Load(*commonDir); err != nil {
-		return err
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	conn, err := db.Open(*dbPath)
+	stats, err := importer.RunImport(ctx, *src, *limit, *commonDir, *dbPath)
 	if err != nil {
 		return err
 	}
-	defer db.Close(conn)
+	printStats(stats)
+	return nil
+}
+
+// cmdUpdate 数据下载与更新（具体流程见 internal/update 包）：
+//   - 无数据库（首次运行）：多线程下载最新导出压缩包到数据目录并导入；
+//   - 已有数据库：对比 config.json 记录的版本，落后则下载最新导出，
+//     导入临时库 -> 完整性检查 -> 删旧库换名，失败时原库不受影响；
+//   - 版本一致且未指定 -force 时跳过。
+//
+// config.json 未记录版本（旧版本程序创建的库）一律视为落后。
+func cmdUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	dbPath := fs.String("db", os.Getenv("BANGUMI_DB"), "数据库路径")
+	commonDir := fs.String("common-dir", os.Getenv("BANGUMI_COMMON"), "common yaml 目录（默认内嵌）")
+	limit := fs.Int64("limit", 0, "每个文件最多导入行数（0 为全部，测试用）")
+	threads := fs.Int("threads", 8, "多线程下载的并发连接数")
+	force := fs.Bool("force", false, "已是最新版本也强制重新下载导入")
+	keepZip := fs.Bool("keep", false, "导入完成后保留压缩包（默认删除以节省空间）")
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `update - 下载 Archive 最新导出并导入/更新
+
+首次运行（无数据库）自动从 aux/latest.json 获取最新导出，
+多线程下载压缩包到数据库所在目录并走完整导入流程；
+已有数据库时对比 data/config.json 记录的版本，落后则：
+下载 -> 导入临时库 -> 完整性检查 -> 原子换库。
+
+用法:
+  bangumi update [-db 路径] [-threads N] [-force] [-keep]
+
+选项:
+  -db           数据库路径（默认 data/bangumi.db 或 $BANGUMI_DB）
+  -threads      多线程下载的并发连接数（默认 8）
+  -limit        每个文件最多导入 N 行（默认全部，测试时用小值）
+  -force        已是最新版本也重新下载导入
+  -keep         导入完成后保留压缩包（默认删除）
+  -common-dir   common yaml 目录（默认内嵌进二进制，无需指定）
+
+注意：更新期间请先停止 serve 服务，避免占用旧库文件导致换库失败。
+`)
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("开始导入 %s -> %s", *src, *dbPath)
-	stats, err := importer.Import(ctx, conn, *src, *limit)
-	if err != nil {
+	stats, err := update.Run(ctx, update.Options{
+		DBPath:    *dbPath,
+		CommonDir: *commonDir,
+		Limit:     *limit,
+		Threads:   *threads,
+		Force:     *force,
+		KeepZip:   *keepZip,
+	})
+	if err != nil || stats == nil {
 		return err
 	}
+	printStats(stats)
+	fmt.Printf("\n数据库已更新至最新版本\n")
+	return nil
+}
+
+func printStats(stats *importer.Stats) {
 	fmt.Printf("\n导入完成:\n")
 	fmt.Printf("  条目:        %d\n", stats.Subjects)
 	fmt.Printf("  人物:        %d\n", stats.Persons)
@@ -128,7 +187,6 @@ func cmdImport(args []string) error {
 	fmt.Printf("  条目-角色:   %d\n", stats.SubjectCharacters)
 	fmt.Printf("  人物-角色:   %d\n", stats.PersonCharacters)
 	fmt.Printf("  人物关联:    %d\n", stats.PersonRelations)
-	return nil
 }
 
 func cmdServe(args []string) error {
@@ -198,7 +256,14 @@ func cmdServe(args []string) error {
 		log.Printf("人物头像服务已就绪（API Key %s）", map[bool]string{true: "已配置", false: "未配置"}[picSvc.HasKey()])
 	}
 
-	router := api.NewRouter(conn, cons, *webDir, picSvc, version)
+	// 数据库版本检查：启动即后台对比 Archive 最新导出（离线时静默跳过），
+	// 落后则日志提醒；结果经 /api/dbinfo 供前端右下角徽标与更新提醒展示。
+	dbVer := update.NewVersionChecker(*dbPath)
+	verCtx, verCancel := context.WithCancel(context.Background())
+	defer verCancel()
+	dbVer.Start(verCtx, update.DefaultCheckInterval)
+
+	router := api.NewRouter(conn, cons, *webDir, picSvc, version, dbVer)
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           router,

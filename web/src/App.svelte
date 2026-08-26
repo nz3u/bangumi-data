@@ -10,7 +10,8 @@
   import PairWorksView from './views/PairWorksView.svelte'
   import SingleWorksView from './views/SingleWorksView.svelte'
   import DetailDrawer from './components/DetailDrawer.svelte'
-  import { health, stats } from './lib/api.js'
+  import DbBadge from './components/DbBadge.svelte'
+  import { health, stats, dbInfo } from './lib/api.js'
   import GitHub from './components/GitHub.svelte';
 
   const tabs = [
@@ -32,6 +33,7 @@
 
   let svc = $state(null)
   let st = $state(null)
+  let dbVer = $state(null)
   let svcError = $state('')
   let lastUpdate = $state(null)
 
@@ -52,6 +54,14 @@
       st = await stats()
     } catch {
       st = null
+    }
+  }
+
+  async function refreshDbInfo() {
+    try {
+      dbVer = await dbInfo()
+    } catch {
+      dbVer = null
     }
   }
 
@@ -86,6 +96,8 @@
       document.title = `${titleOf(normalized)} · Bangumi 本地数据搜索`
     })
 
+    // 数据库版本状态只在进入页面时请求一次（后端缓存检查结果，无需轮询）
+    refreshDbInfo()
     pollOnce()
 
     return () => {
@@ -145,7 +157,11 @@
   <!-- 全局唯一详情抽屉：由内部状态驱动（不写入地址栏），任何页面内打开均复用此实例 -->
   <DetailDrawer />
 
-  <footer class="mt-8 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
-    接口文档见项目 README（REST API 一节）；开发模式：<code>cd web && npm run dev</code>（代理 /api 到 :8080）。
+  <footer class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-neutral-200 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
+    <span>
+      接口文档见项目 README（REST API 一节）；开发模式：<code>cd web && npm run dev</code>（代理 /api 到 :8080）。
+    </span>
+    <!-- 数据库版本标注：右对齐，落后时琥珀色提醒 -->
+    <DbBadge info={dbVer} />
   </footer>
 </div>

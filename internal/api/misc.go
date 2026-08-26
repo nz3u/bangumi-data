@@ -18,6 +18,18 @@ func (h *handler) health(c *gin.Context) {
 	respOK(c, gin.H{"status": "ok", "version": h.version})
 }
 
+// dbInfo 数据库版本与上游最新导出的对比状态。
+// database 为空表示本地无版本记录（旧版本程序创建的库，前端显示「旧版本」）；
+// latest 为空表示尚未成功获取上游元信息（离线等），此时不提示可更新；
+// update_available=true 时前端展示更新提醒。
+func (h *handler) dbInfo(c *gin.Context) {
+	if h.dbver == nil {
+		respOK(c, gin.H{"database": nil, "latest": nil, "update_available": false})
+		return
+	}
+	respOK(c, h.dbver.Status())
+}
+
 // stats 各表行数统计（用于确认导入状态）。
 func (h *handler) stats(c *gin.Context) {
 	tables := []string{

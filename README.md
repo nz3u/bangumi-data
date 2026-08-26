@@ -32,6 +32,14 @@
 ### 1. 导入数据
 
 ```bash
+# 一键下载最新导出并导入（推荐）：自动从 aux/latest.json 获取最新 dump，
+# 多线程下载压缩包到 data/ 后走完整导入流程，版本号记录在 data/config.json
+go run ./cmd/bangumi update
+```
+
+也可以手动导入：
+
+```bash
 # 获取 dump（zip 或解压目录均可）
 # 从 https://github.com/bangumi/Archive/releases 下载，或解析 aux/latest.json
 
@@ -40,6 +48,16 @@ go run ./cmd/bangumi import -file dump-2026-07-28.210449Z.zip
 
 # 测试用小样本
 go run ./cmd/bangumi import -file dump.zip -limit 1000
+```
+
+### 2. 更新数据
+
+```bash
+# 对比 data/config.json 中记录的版本与 Archive 最新导出，
+# 落后则：下载 -> 导入临时库 -> 完整性检查 -> 原子换库（失败不影响旧库）；
+# config.json 未记录版本（旧版本程序创建的库）默认视为落后。
+# 已是最新时跳过；更新期间请先停止 serve 服务。
+go run ./cmd/bangumi update
 ```
 
 ### 2. 启动服务
@@ -53,7 +71,9 @@ go run ./cmd/bangumi serve
 
 ```bash
 docker compose build
-# 导入（把 dump 放入 ./data/）
+# 一键下载最新导出并导入/更新（无需手动放 dump）
+docker compose run --rm update
+# 或手动导入（把 dump 放入 ./data/）
 docker compose run --rm import /app/data/dump.zip
 # 启动服务
 docker compose up -d bangumi
@@ -80,6 +100,8 @@ docker compose up -d bangumi
 - **重名提示**：人物/角色搜索建议检测到同名时顶部提示，确认后跳转人物搜索页发起同名搜索；
   纯数字输入且精确 ID 命中时不提示（意图明确无歧义）
 - **明暗主题**：右上角切换，跟随系统记忆
+- **数据版本徽标**：右下角固定显示数据库导出文件的创建时间；config.json 无版本记录时显示「旧版本」；
+  serve 启动即后台对比 Archive 最新导出，检测到新版本时徽标琥珀色高亮提示「可更新」（日志同步提醒）
 
 构建产物 `web/dist` 通过 `go:embed` 内嵌进二进制，单文件即可同时提供 API 与页面。
 `serve` 时若指定了 `-web` 目录（且存在）则优先托管磁盘目录，否则回退到内嵌页面。
@@ -105,7 +127,8 @@ cd web && npm run dev
 
 ```
 bangumi import -file <dump.zip 或目录> [-db 路径] [-limit N]  导入数据
-bangumi serve  [-listen :8080] [-db 路径] [-web 目录]         启动 API 服务
+bangumi update  [-db 路径] [-threads N] [-force] [-keep]     下载最新导出并导入/更新
+bangumi serve   [-listen :8080] [-db 路径] [-web 目录]        启动 API 服务
 bangumi version                                               版本号
 ```
 
@@ -120,6 +143,7 @@ bangumi version                                               版本号
 |---|---|
 | `GET /api/health` | 健康检查 |
 | `GET /api/stats` | 各表行数统计 |
+| `GET /api/dbinfo` | 数据库版本状态：本地版本记录（无记录=旧版本）、上游最新导出、是否落后（serve 启动即后台检查，之后每 6h 复查；前端右下角徽标与「可更新」提醒数据源） |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
 | `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, url}` |
 | `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名） |
@@ -168,7 +192,7 @@ curl "localhost:8080/api/persons/7906/roles"
 ## 项目结构
 
 ```
-cmd/bangumi/           CLI 入口（import / serve / version）
+cmd/bangumi/           CLI 入口（import / update / serve / version）
 embedded.go            根级包：go:embed 内嵌 common/*.yml
 web/
   src/views/           六个页面视图
@@ -178,7 +202,10 @@ common/                bangumi/common 子模块（id 常量）
 internal/
   common/              yaml 常量解析（anchor/alias），id→中文名
   model/               jsonlines 数据结构
-  db/                  SQLite 连接与 schema（表/索引/FTS）
+  config/              data/config.json（API Key、数据库版本记录）
+  db/                  SQLite 连接与 schema（表/索引/FTS/完整性检查）
+  download/            latest.json 解析 + 多线程分块下载（Range 并发 + SHA256 校验）
+  update/              下载最新导出并导入/更新的编排（临时库换库）
   importer/            zip/jsonlines 流式导入（事务批量）
   wiki/                轻量 infobox 解析（完整语法见 bangumi/wiki-parser-go）
   api/                 REST 接口
