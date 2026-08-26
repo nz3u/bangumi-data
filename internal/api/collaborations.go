@@ -15,10 +15,15 @@ import (
 
 // collaborationAppCTE 某人物出现过的全部条目集合：
 // 制作人员（subject-persons）与声优等角色出演（person-characters）取并集。
+// JOIN subjects 过滤指向已失效条目的孤儿引用，保证计数与明细口径一致。
 const collaborationAppCTE = `app AS (
-	SELECT DISTINCT subject_id FROM subject_persons WHERE person_id = ?
+	SELECT DISTINCT sp.subject_id FROM subject_persons sp
+	JOIN subjects sa ON sa.id = sp.subject_id
+	WHERE sp.person_id = ?
 	UNION
-	SELECT DISTINCT subject_id FROM person_characters WHERE person_id = ?
+	SELECT DISTINCT pc.subject_id FROM person_characters pc
+	JOIN subjects sb ON sb.id = pc.subject_id
+	WHERE pc.person_id = ?
 )`
 
 // ---- 棋盘筛选：按人物职位标签组合过滤 ----
@@ -108,14 +113,14 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 		)`, []any{id, id}
 	}
-	joinSubjects, cond, condArgs := "", "1=1", []any{}
+	joinSubjects, cond, condArgs := "", "1=0", []any{}
 	if len(fb.staff) > 0 {
 		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
 		cond, condArgs = staffConds("sb.type", "sp.position", fb.staff)
 	}
-	cvCond := "1=1"
-	if !fb.cv {
-		cvCond = "1=0"
+	cvCond := "1=0"
+	if fb.cv {
+		cvCond = "1=1"
 	}
 	sql := `pairs AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid
@@ -261,7 +266,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	}
 
 	if len(items) > 0 {
-		if err := h.attachCollabSubjects(id, items, appSQL, appArgs); err != nil {
+		if err := h.attachCollabSubjects(id, items, appSQL, appArgs, fb); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
@@ -278,16 +283,36 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 
 // attachCollabSubjects 为当前页的合作人物填充共同条目明细：
 // 制作职位 + 出演角色（CV），逐行归并到 (合作人物, 条目)，职位 id 用常量文本替换。
-// appSQL/appArgs 为棋盘筛选后组装的 app CTE，保证明细与筛选口径一致。
-func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL string, appArgs []any) error {
+// appSQL/appArgs 为 positions_a 筛选后组装的 app CTE；fb（positions_b）直接作用于
+// 明细行，条件与 pairs CTE 同口径，保证条目集合与统计次数一致，
+// 不会混入与合作人物所选职位无关的作品。
+func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL string, appArgs []any, fb collabRoleFilter) error {
 	index := map[int64]int{}
 	inArgs := make([]any, 0, len(items))
 	for i, it := range items {
 		index[it.PersonID] = i
 		inArgs = append(inArgs, it.PersonID)
 	}
-	queryArgs := append(append([]any{}, appArgs...), id)
-	queryArgs = append(queryArgs, inArgs...)
+
+	// 明细行筛选与 pairs 同口径：fb 为空时全部保留；
+	// 否则制作行须命中所选职位组合、CV 行仅在勾选 cv 标签时保留。
+	joinSubjects, staffCond, staffArgs := "", "1=1", []any{}
+	if !fb.empty() {
+		staffCond = "1=0"
+		if len(fb.staff) > 0 {
+			joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
+			staffCond, staffArgs = staffConds("sb.type", "sp.position", fb.staff)
+		}
+	}
+	cvCond := "1=1"
+	if !fb.empty() && !fb.cv {
+		cvCond = "1=0"
+	}
+
+	// 参数按 SQL 文本中占位符出现顺序排列：
+	// app CTE 参数 → 制作分支 IN(当前页人物) → 职位条件 → 出演分支 IN(当前页人物)
+	queryArgs := append(append([]any{}, appArgs...), inArgs...)
+	queryArgs = append(queryArgs, staffArgs...)
 	queryArgs = append(queryArgs, inArgs...)
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(items)), ",")
@@ -296,12 +321,15 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	rows, err := h.db.Query(`WITH `+appSQL+`,
 		detail AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid, sp.position AS position, 0 AS is_cv, '' AS char_name
-			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)
+			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)`+
+		joinSubjects+`
+			WHERE `+staffCond+`
 			UNION ALL
 			SELECT pc.person_id, ap.subject_id, -1, 1, COALESCE(ch.name, '')
 			FROM app ap
 			CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id IN (`+placeholders+`)
 			LEFT JOIN characters ch ON ch.id = pc.character_id
+			WHERE `+cvCond+`
 		)
 		SELECT d.other, d.position, d.is_cv, d.char_name, s.id, s.name, s.name_cn, s.type, s.date
 		FROM detail d CROSS JOIN subjects s ON s.id = d.sid`, queryArgs...)
@@ -377,7 +405,8 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 
 // ---- 棋盘筛选：职位标签接口 ----
 
-// collabFacet 职位标签（棋盘筛选项）：key 形如 "2:1" 或 "cv"，count 为涉及的条目数。
+// collabFacet 职位标签（棋盘筛选项）：同名职位跨条目类型合并为一项，
+// key 为其原始键的逗号连接（如 "2:20,4:1013"）、或 "cv"；count 为涉及条目数。
 type collabFacet struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
@@ -403,10 +432,35 @@ func sortCollabFacets(list []collabFacet) {
 	})
 }
 
+// facetAcc 单个职位标签的累计器：keys 为合并前的 (类型:职位) 原始键，
+// seen 为去重口径的集合（self 侧为条目、other 侧为 (人物, 条目) 对）。
+type facetAcc struct {
+	keys []string
+	seen map[[2]int64]struct{}
+}
+
+func (a *facetAcc) add(key string, k1, k2 int64) {
+	dup := false
+	for _, k := range a.keys {
+		if k == key {
+			dup = true
+			break
+		}
+	}
+	if !dup {
+		a.keys = append(a.keys, key)
+	}
+	a.seen[[2]int64{k1, k2}] = struct{}{}
+}
+
 // getPersonCollaborationPositions 「人物合作」棋盘筛选的职位标签：
 // 搜索人物 id 后调用，返回两组标签——
 //   - self：当前人物在共同条目中担任的职位（含 CV），count 为涉及条目数；
 //   - other：合作人物在这些条目中担任的职位，count 为涉及 (人物, 条目) 对数。
+//
+// 同名职位（跨条目类型的同一职位名）合并为一项，key 为原始键的逗号连接，
+// 可直接透传给 positions_a/positions_b；CV 只要有声优出演即计（可与制作职位并存）。
+// 该口径与单人作品页、双人合作页的前端统计一致。
 func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -421,47 +475,31 @@ func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 		return
 	}
 
-	// 直接从基表枚举「他人在共同条目中的角色」：
-	//   - 无需先物化 pairs 再逐对回查角色表（旧写法秒级开销）；
-	//   - app_t 把条目类型映射物化为 615 行级小表，避免每行探测 subjects 大表；
-	//   - CROSS JOIN 固定 app 为外层循环，杜绝 `person_id <> ?` 引发的全表扫描。
-	// other_facets 的 DISTINCT 保留 (stype,pos,is_cv,oid,sid) 口径：
-	// 同一人物在同一条目可配音多个角色（person_characters 多行），需去重后计数。
+	// 直接从基表枚举去重后的角色明细行，标签合并在 Go 侧完成：
+	//   - SQL 内按 (stype,pos,sid[,oid]) DISTINCT，消除同条目多角色行的重复；
+	//   - app_t/CROSS JOIN 固定 app 为外层循环，杜绝 `person_id <> ?` 引发的全表扫描。
 	rows, err := h.db.Query(`WITH `+collaborationAppCTE+`,
-		app_t AS (
-			SELECT ap.subject_id AS sid, sa.type AS stype
-			FROM app ap CROSS JOIN subjects sa ON sa.id = ap.subject_id
-		),
-		self_roles AS (
-			SELECT t.stype, sp.position AS pos, 0 AS is_cv, ap.subject_id AS sid
+		self_staff AS (
+			SELECT DISTINCT sa.type AS stype, sp.position AS pos, ap.subject_id AS sid
 			FROM app ap
 			CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id = ?
-			JOIN app_t t ON t.sid = ap.subject_id
-			UNION ALL
-			SELECT 0, 0, 1, ap.subject_id
-			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id = ?
+			CROSS JOIN subjects sa ON sa.id = ap.subject_id
 		),
-		other_roles AS (
-			SELECT t.stype, sp.position AS pos, 0 AS is_cv, sp.person_id AS oid, ap.subject_id AS sid
+		other_staff AS (
+			SELECT DISTINCT sa.type AS stype, sp.position AS pos, sp.person_id AS oid, ap.subject_id AS sid
 			FROM app ap
 			CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?
-			JOIN app_t t ON t.sid = ap.subject_id
-			UNION ALL
-			SELECT 0, 0, 1, pc.person_id, ap.subject_id
-			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
-		),
-		self_facets AS (
-			SELECT stype, pos, MAX(is_cv) AS is_cv, COUNT(DISTINCT sid) AS cnt
-			FROM self_roles GROUP BY stype, pos
-		),
-		other_facets AS (
-			SELECT stype, pos, MAX(is_cv) AS is_cv, COUNT(*) AS cnt
-			FROM (SELECT DISTINCT stype, pos, is_cv, oid, sid FROM other_roles)
-			GROUP BY stype, pos
+			CROSS JOIN subjects sa ON sa.id = ap.subject_id
 		)
-		SELECT 'self' AS side, stype, pos, is_cv, cnt FROM self_facets
+		SELECT 'self_s', stype, pos, 0 AS is_cv, sid AS k1, 0 AS k2 FROM self_staff
 		UNION ALL
-		SELECT 'other', stype, pos, is_cv, cnt FROM other_facets`,
+		SELECT 'self_cv', 0, 0, 1, pc.subject_id, 0
+		FROM app ap1 CROSS JOIN person_characters pc ON pc.subject_id = ap1.subject_id AND pc.person_id = ?
+		UNION ALL
+		SELECT 'other_s', stype, pos, 0, sid, oid FROM other_staff
+		UNION ALL
+		SELECT 'other_cv', 0, 0, 1, pc.subject_id, pc.person_id
+		FROM app ap2 CROSS JOIN person_characters pc ON pc.subject_id = ap2.subject_id AND pc.person_id <> ?`,
 		id, id, id, id, id, id)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -469,33 +507,64 @@ func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	selfList, otherList := []collabFacet{}, []collabFacet{}
+	selfAcc := map[string]*facetAcc{}
+	otherAcc := map[string]*facetAcc{}
+	selfCv := map[int64]struct{}{}
+	otherCv := map[[2]int64]struct{}{}
 	for rows.Next() {
 		var side string
-		var stype, pos, isCv, cnt int64
-		if err := rows.Scan(&side, &stype, &pos, &isCv, &cnt); err != nil {
+		var stype, pos, isCv, k1, k2 int64
+		if err := rows.Scan(&side, &stype, &pos, &isCv, &k1, &k2); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
-		cv := isCv == 1
-		fc := collabFacet{
-			Key:   "cv",
-			Label: h.facetLabel(stype, pos, cv),
-			CV:    cv,
-			Count: cnt,
+		if isCv == 1 {
+			if side == "self_cv" {
+				selfCv[k1] = struct{}{} // 条目
+			} else {
+				otherCv[[2]int64{k2, k1}] = struct{}{} // (人物, 条目)
+			}
+			continue
 		}
-		if !cv {
-			fc.Key = strconv.FormatInt(stype, 10) + ":" + strconv.FormatInt(pos, 10)
+		m := selfAcc
+		kk1, kk2 := int64(0), k1
+		key := strconv.FormatInt(stype, 10) + ":" + strconv.FormatInt(pos, 10)
+		label := h.facetLabel(stype, pos, false)
+		if side != "self_s" {
+			m = otherAcc
+			kk1, kk2 = k2, k1 // (人物, 条目)
 		}
-		if side == "self" {
-			selfList = append(selfList, fc)
-		} else {
-			otherList = append(otherList, fc)
+		a, ok := m[label]
+		if !ok {
+			a = &facetAcc{seen: map[[2]int64]struct{}{}}
+			m[label] = a
 		}
+		a.add(key, kk1, kk2)
 	}
 	if err := rows.Err(); err != nil {
 		fail(c, 500, err.Error())
 		return
+	}
+
+	build := func(m map[string]*facetAcc) []collabFacet {
+		list := make([]collabFacet, 0, len(m))
+		for label, a := range m {
+			sort.Strings(a.keys)
+			list = append(list, collabFacet{
+				Key:   strings.Join(a.keys, ","),
+				Label: label,
+				Count: int64(len(a.seen)),
+			})
+		}
+		return list
+	}
+	selfList := build(selfAcc)
+	if n := len(selfCv); n > 0 {
+		selfList = append(selfList, collabFacet{Key: "cv", Label: "CV", CV: true, Count: int64(n)})
+	}
+	otherList := build(otherAcc)
+	if n := len(otherCv); n > 0 {
+		otherList = append(otherList, collabFacet{Key: "cv", Label: "CV", CV: true, Count: int64(n)})
 	}
 	sortCollabFacets(selfList)
 	sortCollabFacets(otherList)

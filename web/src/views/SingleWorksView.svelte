@@ -55,16 +55,15 @@
   // 每个制作职位各成组，多职位的条目会在多个组中出现；
   // 无制作职位（仅声优出演）的条目归入末尾「CV」组。
   // 组按作品数倒序排列，组内按日期倒序。
-  // allowedLabels：职位筛选生效时仅保留所选职位对应的组（含「CV」）。
-  function buildGroups(items, allowedLabels = null) {
-    const allowSet = allowedLabels ? new Set(allowedLabels) : null
+  // 职位筛选生效时基于筛选后的作品重建分组：命中的作品仍按其全部职务归组，
+  // 兼任多职位的作品（含 CV 与制作并存）会出现在对应各组中。
+  function buildGroups(items) {
     const map = new Map()
     for (const it of items) {
       const labels = new Set()
       for (const r of it.roles ?? []) if (!r.cv) labels.add(r.text)
       if (labels.size === 0) labels.add('__cv__')
       for (const l of labels) {
-        if (allowSet && !allowSet.has(l)) continue
         if (!map.has(l)) map.set(l, [])
         map.get(l).push(it)
       }
@@ -85,20 +84,21 @@
     return (roles ?? []).map((r) => r.text).join(' / ')
   }
 
-  // ---- 当前人物职位标签（同合作页棋盘 self 侧口径） ----
-  // 按制作职位统计涉及作品数；无制作职位（仅声优出演）归入「CV」。
-  // 排序与分组一致：按作品数倒序，同数按名称。
+  // ---- 当前人物职位标签（与「人物合作」棋盘 self 侧口径一致） ----
+  // 制作职位按职位名统计涉及作品数；「CV」只要有声优出演即计（可与制作职位并存，
+  // 与合作页棋盘、双人合作页一致）。排序：按作品数倒序，同数按名称。
   const facets = $derived.by(() => {
     if (!data) return null
     const map = new Map()
     for (const w of data.items) {
       const labels = new Set()
-      for (const r of w.roles ?? []) if (!r.cv) labels.add(r.text)
-      if (labels.size === 0) {
-        map.set('__cv__', (map.get('__cv__') ?? 0) + 1)
-      } else {
-        for (const l of labels) map.set(l, (map.get(l) ?? 0) + 1)
+      let hasCv = false
+      for (const r of w.roles ?? []) {
+        if (r.cv) hasCv = true
+        else labels.add(r.text)
       }
+      for (const l of labels) map.set(l, (map.get(l) ?? 0) + 1)
+      if (hasCv) map.set('__cv__', (map.get('__cv__') ?? 0) + 1)
     }
     return [...map.entries()]
       .map(([key, count]) => ({ key, label: key === '__cv__' ? 'CV' : key, count }))
@@ -120,19 +120,14 @@
   }
   const posTagsShown = $derived.by(() => (facets ?? []).filter((t) => tagHit(t.label, tagQ)))
 
-  // 选定职位后先在条目级过滤：任一所选职位命中即保留；「CV」匹配无制作职位的条目
+  // 选定职位后在作品级过滤：任一角色命中所选标签即保留；
+  // 「CV」命中该作品的任一声优出演（含兼任制作职位的作品）
   const posItems = $derived.by(() => {
     if (!data || selPos.length === 0) return data?.items ?? []
     const sel = new Set(selPos)
-    return data.items.filter((w) => {
-      let hasProd = false
-      for (const r of w.roles ?? []) {
-        if (r.cv) continue
-        if (sel.has(r.text)) return true
-        hasProd = true
-      }
-      return !hasProd && sel.has('__cv__')
-    })
+    return data.items.filter((w) =>
+      (w.roles ?? []).some((r) => (r.cv ? sel.has('__cv__') : sel.has(r.text)))
+    )
   })
 
   const tagIdleCls =
@@ -143,10 +138,10 @@
   // 搜索范围覆盖全部展示内容：分组名、职务、日期、标题（中文名/原名）、类型标签。
   // 分组名命中时保留整组，否则仅保留行内命中的作品；无命中的分组隐藏。
   // 命中判定先走原文子串，未命中再尝试拼音全拼/首字母匹配（如 dy→导演）。
-  // 职位筛选生效时：仅构建所选职位对应的组，再叠加关键词过滤。
+  // 职位筛选生效时：先在作品级过滤（posItems），再基于筛选结果重建分组。
   const filtered = $derived.by(() => {
     if (!data || data.items.length === 0) return null
-    const base = buildGroups(posItems, selPos.length > 0 ? [...selPos] : null)
+    const base = buildGroups(posItems)
     const q = filter.trim().toLowerCase()
     if (!q) return { ...base, matched: posItems.length }
     const hit = (text) =>
