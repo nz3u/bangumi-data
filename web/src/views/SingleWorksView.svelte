@@ -1,7 +1,8 @@
-<script>
+﻿<script>
   import { getPersonRoles } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
+ import Highlight from '../components/Highlight.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
@@ -170,7 +171,7 @@
   })
 </script>
 
-<div class="grid gap-4">
+<div class="grid grid-cols-[minmax(0,1fr)] gap-4">
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="roles-pid">人物 ID</label>
@@ -316,20 +317,20 @@
             <div class="space-y-3">
               {#each filtered.groups as g (g.label)}
                 <section class="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <h3 class="border-b border-neutral-200 bg-neutral-100/80 px-4 py-2 text-sm font-semibold dark:border-neutral-800 dark:bg-neutral-800/60">
-                    {g.label}
-                    <small class="ml-1 font-normal text-neutral-400">(x{g.works.length})</small>
-                  </h3>
+                    <h3 class="border-b border-neutral-200 bg-neutral-100/80 px-4 py-2 text-sm font-semibold dark:border-neutral-800 dark:bg-neutral-800/60">
+                      <Highlight text={g.label} q={filter} />
+                      <small class="ml-1 font-normal text-neutral-400">(x{g.works.length})</small>
+                    </h3>
                   <div class="divide-y divide-neutral-100 dark:divide-neutral-900">
                     {#each g.works as w, i (w.id)}
                       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 {i % 2 === 1 ? 'bg-neutral-50 dark:bg-neutral-900/40' : 'bg-white/60 dark:bg-neutral-900/60'}">
-                        <span class="shrink-0 text-xs tabular-nums text-neutral-400">{w.date || '—'}</span>
+                        <span class="shrink-0 text-xs tabular-nums text-neutral-400"><Highlight text={w.date || '—'} q={filter} /></span>
                         <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
                           title="{w.date || ''} {w.type_name}"
-                        >{w.name_cn || w.name}</button>
-                        <span class="chip shrink-0">{w.type_name}</span>
+                        >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
+                        <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>
                         <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-                          <span class="truncate">{roleText(w.roles) || '—'}</span>
+                          <span class="min-w-0 max-w-full truncate"><Highlight text={roleText(w.roles) || '—'} q={filter} /></span>
                         </span>
                       </div>
                     {/each}

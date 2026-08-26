@@ -1,9 +1,10 @@
-<script>
+﻿<script>
   import { onMount } from 'svelte'
   import { getPairCollaboration } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import { onNavParams } from '../lib/nav.js'
   import PinyinMatch from 'pinyin-match'
+ import Highlight from '../components/Highlight.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
@@ -232,7 +233,7 @@
   })
 </script>
 
-<div class="grid gap-4">
+<div class="grid grid-cols-[minmax(0,1fr)] gap-4">
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="pair-ida">人物 A ID</label>
@@ -255,7 +256,7 @@
   {#if loading}
     <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
   {:else if data}
-    <div class="relative grid gap-4">
+    <div class="relative grid grid-cols-[minmax(0,1fr)] gap-4">
       <!-- 左侧悬浮轨：当前人物（A）职位（细长列表，悬浮于页面左侧留白） -->
       {#if facets}
         <div class="absolute inset-y-0 left-0 z-10 hidden w-28 -translate-x-full pr-2 min-[1440px]:block">
@@ -470,20 +471,20 @@
             {#each filtered.groups as g (g.label)}
               <section class="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <h3 class="border-b border-neutral-200 bg-neutral-100/80 px-4 py-2 text-sm font-semibold dark:border-neutral-800 dark:bg-neutral-800/60">
-                  {g.label}
+                  <Highlight text={g.label} q={filter} />
                   <small class="ml-1 font-normal text-neutral-400">(x{g.works.length})</small>
                 </h3>
                 <div class="divide-y divide-neutral-100 dark:divide-neutral-900">
                   {#each g.works as w, i (w.id)}
                     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 {i % 2 === 1 ? 'bg-neutral-50 dark:bg-neutral-900/40' : 'bg-white/60 dark:bg-neutral-900/60'}">
-                      <span class="shrink-0 text-xs tabular-nums text-neutral-400">{w.date || '—'}</span>
+                      <span class="shrink-0 text-xs tabular-nums text-neutral-400"><Highlight text={w.date || '—'} q={filter} /></span>
                       <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
                         title="{w.date || ''} {w.type_name}"
-                      >{w.name_cn || w.name}</button>
-                      <span class="chip shrink-0">{w.type_name}</span>
+                      >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
+                      <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>
                       <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-                        <span class="truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_a.name}:</b> {roleText(w.roles_a) || '—'}</span>
-                        <span class="truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_b.name}:</b> {roleText(w.roles_b) || '—'}</span>
+                        <span class="min-w-0 max-w-full truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_a.name}:</b> <Highlight text={roleText(w.roles_a) || '—'} q={filter} /></span>
+                        <span class="min-w-0 max-w-full truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_b.name}:</b> <Highlight text={roleText(w.roles_b) || '—'} q={filter} /></span>
                       </span>
                     </div>
                   {/each}
