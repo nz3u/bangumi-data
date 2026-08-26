@@ -88,6 +88,7 @@ type Service struct {
 	sem      chan struct{} // 并发额度
 	inflight sync.Map      // picKey -> struct{}，去重进行中的抓取
 	failed   sync.Map      // picKey -> time.Time，失败负缓存
+	stopCh   chan struct{}  // 停止后台清理协程
 }
 
 // Open 打开（或创建）bgm_pic SQLite 库并确保三张分表存在。
@@ -107,18 +108,46 @@ func Open(path, apiKey string) (*Service, error) {
 			return nil, fmt.Errorf("pics: 建表 %s: %w", k, err)
 		}
 	}
-	return &Service{
-		conn: conn,
-		key:  apiKey,
-		http: &http.Client{Timeout: fetchTimeout},
-		sem:  make(chan struct{}, fetchConcurrency),
-	}, nil
+	stopCh := make(chan struct{})
+	svc := &Service{
+		conn:   conn,
+		key:    apiKey,
+		http:   &http.Client{Timeout: fetchTimeout},
+		sem:    make(chan struct{}, fetchConcurrency),
+		stopCh: stopCh,
+	}
+	go svc.cleanupLoop(stopCh)
+	return svc, nil
 }
 
-// Close 关闭数据库连接。
+// Close 关闭后台清理协程并断开数据库连接。
 func (s *Service) Close() {
-	if s != nil && s.conn != nil {
-		db.Close(s.conn)
+	if s != nil {
+		close(s.stopCh)
+		if s.conn != nil {
+			db.Close(s.conn)
+		}
+	}
+}
+
+// cleanupLoop 每 10 分钟扫描 failed 负缓存，清除已过期条目，
+// 防止 sync.Map 无限增长导致内存泄漏。
+func (s *Service) cleanupLoop(stop <-chan struct{}) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			s.failed.Range(func(key, value any) bool {
+				if now.Sub(value.(time.Time)) >= failedTTL {
+					s.failed.Delete(key)
+				}
+				return true
+			})
+		}
 	}
 }
 

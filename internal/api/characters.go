@@ -181,6 +181,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 		fail(c, 500, err.Error())
 		return
 	}
+	defer srows.Close()
 	for srows.Next() {
 		var it characterSubjectItem
 		if err := srows.Scan(&it.SubjectID, &it.Name, &it.NameCN, &it.Type, &it.CharType, &it.Order, &it.Date, &it.Score); err != nil {
@@ -191,7 +192,6 @@ func (h *handler) getCharacter(c *gin.Context) {
 		it.CharTypeName = h.cons.SubjectCharTypes[it.CharType]
 		d.Subjects = append(d.Subjects, it)
 	}
-	srows.Close()
 
 	// 声优/演员（CV）。按人物去重：同一人物在不同作品/译配下会重复出现，
 	// 这里只保留每个人物一条（类型取最小值，主配 CV=0 优先）。
@@ -205,6 +205,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 		fail(c, 500, err.Error())
 		return
 	}
+	defer crows.Close()
 	for crows.Next() {
 		var it cvItem
 		if err := crows.Scan(&it.PersonID, &it.Name, &it.Type); err != nil {
@@ -214,7 +215,6 @@ func (h *handler) getCharacter(c *gin.Context) {
 		it.TypeName = h.cons.PersonRelationCN("prsn_cv", it.Type)
 		d.CVs = append(d.CVs, it)
 	}
-	crows.Close()
 
 	// 角色关联（双向）。仅取 crt 行：crt 行两端都是角色；
 	// prsn 行属于人物域，ID 与角色相互独立、不可按数字混用。
@@ -232,6 +232,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 		fail(c, 500, err.Error())
 		return
 	}
+	defer rrows.Close()
 	for rrows.Next() {
 		var (
 			rt      int
@@ -257,7 +258,6 @@ func (h *handler) getCharacter(c *gin.Context) {
 		fail(c, 500, err.Error())
 		return
 	}
-	rrows.Close()
 
 	respOK(c, d)
 }
