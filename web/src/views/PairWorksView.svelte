@@ -482,9 +482,9 @@
                         title="{w.date || ''} {w.type_name}"
                       >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
                       <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>
-                      <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-                        <span class="min-w-0 max-w-full truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_a.name}:</b> <Highlight text={roleText(w.roles_a) || '—'} q={filter} /></span>
-                        <span class="min-w-0 max-w-full truncate"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_b.name}:</b> <Highlight text={roleText(w.roles_b) || '—'} q={filter} /></span>
+                      <span class="ml-auto flex min-w-0 max-w-full items-center gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
+                        <span class="min-w-0 max-w-full truncate leading-7"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_a.name}:</b> <Highlight text={roleText(w.roles_a) || '—'} q={filter} /></span>
+                        <span class="min-w-0 max-w-full truncate leading-7"><b class="font-medium text-neutral-600 dark:text-neutral-300">{data.person_b.name}:</b> <Highlight text={roleText(w.roles_b) || '—'} q={filter} /></span>
                       </span>
                     </div>
                   {/each}
