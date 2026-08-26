@@ -49,8 +49,9 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics
 		// 图片解析（person=人物头像 / subject=条目封面 / character=角色头像）
 		api.GET("/pics/:kind/:id", h.pic)
 
-		// 条目
+		// 条目（静态段路由需先于 :id 参数路由注册）
 		api.GET("/subjects/search", h.searchSubjects)
+		api.GET("/subjects/tags", h.suggestSubjectTags)
 		api.GET("/subjects/:id", h.getSubject)
 		api.GET("/subjects/:id/episodes", h.getSubjectEpisodes)
 
@@ -72,7 +73,9 @@ func NewRouter(conn *sql.DB, cons *common.Constants, webDir string, picSvc *pics
 
 	if webDir != "" {
 		if st, err := os.Stat(webDir); err == nil && st.IsDir() {
-			r.Static("/", webDir)
+			// gin 1.12 起根级 catch-all（r.Static("/") 内部为 /*filepath）与已注册的
+			// /api 前缀冲突会 panic，改用与内嵌模式一致的 NoRoute 托管。
+			serveEmbedded(r, os.DirFS(webDir))
 			return r
 		}
 	}

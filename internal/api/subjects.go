@@ -9,9 +9,11 @@ import (
 )
 
 // searchSubjects 条目搜索与筛选。
-// 参数：q（全文搜索）、type、platform、tag、date_from、date_to、
+// 参数：q（全文搜索）、type、platform、tag/meta_tag（多标签组合："+A,+B,-C"，
 //
-//	rank_min、score_min、nsfw(0/1)、sort(rank|score|date|favorite|id)、order、page、size
+//	'+' 必须包含 / '-' 必须排除，无前缀视为 '+'；meta_tag 同语法）、
+//	date_from、date_to、rank_min、score_min、nsfw(0/1)、
+//	sort(rank|score|date|favorite|id)、order、page、size
 func (h *handler) searchSubjects(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
@@ -81,15 +83,13 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		conds = append(conds, "s.date <= ?")
 		args = append(args, v)
 	}
-	if tag := strings.TrimSpace(c.Query("tag")); tag != "" {
+	if v := parseTagCombo(c.Query("tag")); len(v.pos) > 0 || len(v.neg) > 0 {
 		fullScan = true
-		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(s.tags) je WHERE je.value->>'name' = ?)`)
-		args = append(args, tag)
+		conds, args = appendTagFilters(conds, args, "s.tags", "te.value->>'name'", v.pos, v.neg)
 	}
-	if metaTag := strings.TrimSpace(c.Query("meta_tag")); metaTag != "" {
+	if v := parseTagCombo(c.Query("meta_tag")); len(v.pos) > 0 || len(v.neg) > 0 {
 		fullScan = true
-		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(s.meta_tags) mt WHERE mt.value = ?)`)
-		args = append(args, metaTag)
+		conds, args = appendTagFilters(conds, args, "s.meta_tags", "te.value", v.pos, v.neg)
 	}
 
 	page, size := pagination(c)
@@ -158,6 +158,111 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		return
 	}
 	respOK(c, listResp{Total: total, Page: page, Size: size, Items: items})
+}
+
+// tagCombo 多标签组合解析结果：pos 为必须全部包含的正标签，neg 为必须全部不包含的负标签。
+type tagCombo struct {
+	pos []string
+	neg []string
+}
+
+// parseTagCombo 解析多标签组合参数："+A,+B,-C"（逗号分隔，可含中文逗号）。
+// '+' 前缀为正标签（要求包含），'-' 前缀为负标签（要求排除），
+// 无前缀视为正标签（兼容单标签旧参数）；空片段与裸符号忽略，前后空格去除。
+func parseTagCombo(raw string) tagCombo {
+	var v tagCombo
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '，' }) {
+		part = strings.TrimSpace(part)
+		switch {
+		case part == "" || part == "+" || part == "-": // 空片段/裸符号无标签名，忽略
+		case part[0] == '-':
+			v.neg = append(v.neg, strings.TrimSpace(part[1:]))
+		case part[0] == '+':
+			v.pos = append(v.pos, strings.TrimSpace(part[1:]))
+		default:
+			v.pos = append(v.pos, part)
+		}
+	}
+	return v
+}
+
+// appendTagFilters 追加正/负标签条件：正标签 EXISTS 要求存在，负标签 NOT EXISTS 要求不存在。
+// src 为 JSON 数组列（如 s.tags），valExpr 为 json_each 展开值的取值表达式
+// （普通标签取 te.value->>'name'，元标签数组元素直接取 te.value）。
+func appendTagFilters(conds []string, args []any, src, valExpr string, pos, neg []string) ([]string, []any) {
+	exists := "EXISTS (SELECT 1 FROM json_each(" + src + ") te WHERE " + valExpr + " = ?)"
+	for _, t := range pos {
+		conds = append(conds, exists)
+		args = append(args, t)
+	}
+	for _, t := range neg {
+		conds = append(conds, "NOT "+exists)
+		args = append(args, t)
+	}
+	return conds, args
+}
+
+// suggestSubjectTags 标签/元标签实时建议。
+// kind=tag（普通标签）|meta（元标签）；q 可选子串过滤（ASCII 大小写不敏感）；
+// limit 默认 50、上限 5000（前端一次性拉取候选池后做拼音首字母本地过滤）。
+// 返回按使用次数降序的 {name, cnt} 列表，前缀命中优先于子串命中。
+func (h *handler) suggestSubjectTags(c *gin.Context) {
+	table := "subject_tags_agg"
+	if c.Query("kind") == "meta" {
+		table = "subject_meta_tags_agg"
+	}
+
+	limit := 50
+	if v, ok := parseIntQuery(c, "limit"); ok && v > 0 {
+		limit = v
+	}
+	if limit > maxTagSuggestLimit {
+		limit = maxTagSuggestLimit
+	}
+
+	q := strings.TrimSpace(c.Query("q"))
+	where, args := "", []any{}
+	if q != "" {
+		where = " WHERE name LIKE ? ESCAPE '\\'"
+		args = append(args, "%"+escapeLike(q)+"%")
+	}
+
+	rows, err := h.db.Query(`SELECT name, cnt FROM `+table+where+
+		` ORDER BY (name LIKE ?) DESC, cnt DESC, name LIMIT ?`,
+		append(args, escapeLike(q)+"%", limit)...)
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := make([]gin.H, 0, limit)
+	for rows.Next() {
+		var (
+			name string
+			cnt  int64
+		)
+		if err := rows.Scan(&name, &cnt); err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		items = append(items, gin.H{"name": name, "cnt": cnt})
+	}
+	if err := rows.Err(); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	respOK(c, gin.H{"items": items})
+}
+
+// maxTagSuggestLimit 建议接口单次返回上限。
+const maxTagSuggestLimit = 5000
+
+// escapeLike 转义 LIKE 通配符（配合 ESCAPE '\'），防止用户输入干扰匹配。
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	return strings.ReplaceAll(s, `_`, `\_`)
 }
 
 // relationItem 条目关联（含反向）。

@@ -7,6 +7,7 @@
 //  2. 逐行解析 infobox 回填「简体中文名」（耗时一次性操作，
 //     完成后写入 schema_meta 标记，之后跳过）
 //  3. FTS 表缺少 name_cn 列时重建并重新填充
+//  4. 构建标签/元标签聚合表（条目搜索建议数据源，tag_stats_built 标记）
 package db
 
 import (
@@ -19,8 +20,10 @@ import (
 )
 
 const nameCNBackfillDone = "name_cn_backfilled"
+const tagStatsBuilt = "tag_stats_built"
 
-// UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS。
+// UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS
+// -> 构建标签/元标签聚合表。
 // 新导入的库各步骤均检测为已完成，直接返回（仅两次 pragma/master 查询开销）。
 func UpgradeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, `CREATE TABLE IF NOT EXISTS schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
@@ -89,6 +92,34 @@ func UpgradeSchema(conn *sql.DB) error {
 		}
 		log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
 	}
+
+	// 4. 标签/元标签聚合表（条目搜索建议数据源）：
+	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开统计（新导入的库
+	//    由 FinalizeSchema 构建并置标记，此处直接跳过）。
+	done, err = metaGet(conn, tagStatsBuilt)
+	if err != nil {
+		return err
+	}
+	hasAgg, err := tableExists(conn, "subject_tags_agg")
+	if err != nil {
+		return fmt.Errorf("检查 subject_tags_agg: %w", err)
+	}
+	if done != "1" || !hasAgg {
+		if err := ExecMulti(conn, `CREATE TABLE IF NOT EXISTS subject_tags_agg (
+				name TEXT PRIMARY KEY, cnt INTEGER NOT NULL);
+			CREATE TABLE IF NOT EXISTS subject_meta_tags_agg (
+				name TEXT PRIMARY KEY, cnt INTEGER NOT NULL);`); err != nil {
+			return fmt.Errorf("补建标签聚合表: %w", err)
+		}
+		n, err := buildTagStats(conn)
+		if err != nil {
+			return fmt.Errorf("构建标签聚合表: %w", err)
+		}
+		log.Printf("已构建标签/元标签聚合表（%d 行，耗时一次性，之后跳过）", n)
+		if err := metaSet(conn, tagStatsBuilt, "1"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -144,6 +175,26 @@ func metaGet(conn *sql.DB, key string) (string, error) {
 func metaSet(conn *sql.DB, key, value string) error {
 	_, err := conn.Exec(`INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)`, key, value)
 	return err
+}
+
+// tableExists 检查表是否存在。
+func tableExists(conn *sql.DB, table string) (bool, error) {
+	var n int64
+	err := conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
+	return n > 0, err
+}
+
+// buildTagStats 全量展开 subjects.tags / subjects.meta_tags 统计各标签使用次数，
+// 返回聚合总行数。INSERT OR REPLACE 幂等，可重复调用。
+func buildTagStats(conn *sql.DB) (int64, error) {
+	if err := ExecMulti(conn, tagStatsPopulateSQL); err != nil {
+		return 0, err
+	}
+	var n int64
+	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM subject_tags_agg) + (SELECT COUNT(*) FROM subject_meta_tags_agg)`).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // backfillNameCN 全表扫描 name_cn 为空的行，解析 infobox 提取「简体中文名」后批量更新。

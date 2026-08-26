@@ -1,12 +1,19 @@
 <script>
   import { onMount } from 'svelte'
   import { searchSubjects } from '../lib/api.js'
-  import { loadConstants, platformsFor, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
+  import {
+    loadConstants,
+    platformsFor,
+    enumList,
+    SUBJECT_AUTO_SEARCH_DEBOUNCE_MS,
+    TAG_BOX_IDLE_SEARCH_MS
+  } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
  import Pagination from '../components/Pagination.svelte'
  import Highlight from '../components/Highlight.svelte'
- import { openDetail } from '../lib/detail.svelte.js'
- import { externalUrl } from '../lib/settings.svelte.js'
+ import TagSuggest from '../components/TagSuggest.svelte'
+  import { openDetail } from '../lib/detail.svelte.js'
+  import { externalUrl } from '../lib/settings.svelte.js'
 
   const DEFAULTS = {
     q: '',
@@ -63,17 +70,27 @@
   const formSig = () => JSON.stringify(f)
   let appliedFormSig = formSig()
 
-  // 自动搜索（无搜索建议）：表单相对最近一次已执行搜索的快照有任何变更时，
-  // 停顿 AUTO_SEARCH_DEBOUNCE_MS 后自动提交。手动提交会先更新快照，故不会误触发；
-  // 输入回退到与快照一致则取消。
+  // 标签框激活状态与最近变动时间：激活期间自动搜索需等待标签内容静默，
+  // 避免选词（含拼音首字母检索）过程中频繁触发搜索。
+  let tagBoxFocus = $state({ tag: false, metaTag: false })
+  let lastTagBoxChangeAt = $state(0)
+
+  // 自动搜索：表单相对最近一次已执行搜索的快照有任何变更时，停顿
+  // SUBJECT_AUTO_SEARCH_DEBOUNCE_MS 后自动提交；若任一标签建议框仍处于激活状态，
+  // 则需其内容静默 TAG_BOX_IDLE_SEARCH_MS 后才触发。手动提交会先更新快照，
+  // 故不会误触发；输入回退到与快照一致则取消。
   $effect(() => {
     const sig = formSig()
     if (sig === appliedFormSig) return
     clearTimeout(autoTimer)
+    let delay = SUBJECT_AUTO_SEARCH_DEBOUNCE_MS
+    if (tagBoxFocus.tag || tagBoxFocus.metaTag) {
+      delay = Math.max(delay, TAG_BOX_IDLE_SEARCH_MS - (Date.now() - lastTagBoxChangeAt))
+    }
     autoTimer = setTimeout(() => {
       autoTimer = null
       submit()
-    }, AUTO_SEARCH_DEBOUNCE_MS)
+    }, delay)
     return () => clearTimeout(autoTimer)
   })
 
@@ -137,12 +154,28 @@
         </select>
       </div>
       <div>
-        <label class="label" for="subject-tag">标签</label>
-        <input id="subject-tag" class="input" type="text" placeholder="如：奇幻" bind:value={f.tag} />
+        <label class="label" for="subject-tag">标签（+必须包含 / -必须排除，逗号分隔）</label>
+        <TagSuggest
+          inputId="subject-tag"
+          kind="tag"
+          placeholder="如：+奇幻,-科幻"
+          bind:text={f.tag}
+          onfocus={() => (tagBoxFocus.tag = true)}
+          onblur={() => (tagBoxFocus.tag = false)}
+          oninput={() => (lastTagBoxChangeAt = Date.now())}
+        />
       </div>
       <div>
-        <label class="label" for="subject-metatag">Meta 标签</label>
-        <input id="subject-metatag" class="input" type="text" placeholder="如：社畜" bind:value={f.metaTag} />
+        <label class="label" for="subject-metatag">Meta 标签（同上组合语法）</label>
+        <TagSuggest
+          inputId="subject-metatag"
+          kind="meta"
+          placeholder="如：小说"
+          bind:text={f.metaTag}
+          onfocus={() => (tagBoxFocus.metaTag = true)}
+          onblur={() => (tagBoxFocus.metaTag = false)}
+          oninput={() => (lastTagBoxChangeAt = Date.now())}
+        />
       </div>
 
       <div>

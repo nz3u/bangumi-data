@@ -89,7 +89,7 @@ docker compose up -d bangumi
 | `/collaborations` | 人物合作 | 人物简介 + 合作人物棋盘（职位标签筛选、共同条目） |
 | `/pairworks` | 双人合作 | 两人物共同参与的条目及双方职务 |
 | `/singleworks` | 单人作品 | 单人物参与的全部条目，按职务分组，支持职位筛选 |
-| `/subjects` | 条目搜索 | 多条件筛选 + 分页 |
+| `/subjects` | 条目搜索 | 多条件筛选 + 分页；标签/Meta 标签实时建议（支持拼音首字母如 `xs`→小说、`qh`→奇幻）与多标签组合（`+必须包含,-必须排除`）；停顿 2s 自动搜索，标签框激活时需静默 3s |
 | `/persons` | 人物搜索 | 搜索建议（输入停顿 1s 自动执行） |
 | `/characters` | 角色搜索 | 同上 |
 
@@ -148,7 +148,8 @@ bangumi version                                               版本号
 | `GET /api/dbinfo` | 数据库版本状态：本地版本记录（无记录=旧版本）、上游最新导出、是否落后（serve 启动即后台检查，之后每 6h 复查；前端右下角徽标与「可更新」提醒数据源） |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
 | `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, path}`，path 为不含主机的 CDN 路径，由前端按设置拼接图片主机（默认 lain.bgm.tv，可在前端设置面板自定义） |
-| `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名） |
+| `GET /api/subjects/search?q=&type=&platform=&tag=&meta_tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名；`tag`/`meta_tag` 支持多标签组合：`+必须包含,-必须排除`，逗号分隔多选，无前缀视为 `+`） |
+| `GET /api/subjects/tags?kind=tag|meta&q=&limit=` | 条目标签/元标签实时建议（按使用次数降序，前缀命中优先；前端拉取候选池后做拼音首字母本地过滤） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |
 | `GET /api/persons/search?q=&type=` | 人物搜索（q 匹配原名与 infobox 简体中文名） |
@@ -168,8 +169,14 @@ bangumi version                                               版本号
 # 2020 年后评分 8 分以上、rank 前 5000 的动画
 curl "localhost:8080/api/subjects/search?type=2&score_min=8&rank_min=1&date_from=2020-01-01&sort=rank&size=20"
 
-# 按标签筛选漫画
+# 按标签筛选漫画（单标签）
 curl "localhost:8080/api/subjects/search?type=1&tag=奇幻&sort=score&order=desc"
+
+# 多标签组合：必须含「奇幻」且不含「科幻」；元标签同语法（如 meta_tag=+小说,-社畜）
+curl "localhost:8080/api/subjects/search?tag=%2B奇幻,-科幻"
+
+# 标签/元标签建议（条目搜索页实时提示，kind=meta 查元标签）
+curl "localhost:8080/api/subjects/tags?kind=tag&q=奇幻"
 
 # 全文搜索（中文子串匹配）
 curl "localhost:8080/api/subjects/search?q=路人女主的养成方法"
