@@ -11,6 +11,7 @@
   import SingleWorksView from './views/SingleWorksView.svelte'
   import DetailDrawer from './components/DetailDrawer.svelte'
   import { health, stats } from './lib/api.js'
+  import GitHub from './components/GitHub.svelte';
 
   const tabs = [
     { key: 'collaborations', label: '人物合作', path: '/collaborations' },
@@ -123,6 +124,7 @@
       </div>
     {/if}
     <span class="ml-auto text-xs text-neutral-500">本地 SQLite 数据 · FTS5 检索</span>
+    <GitHub />
     <ThemeToggle />
   </header>
 
