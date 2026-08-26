@@ -1,10 +1,14 @@
-.PHONY: build serve
+.PHONY: all web build run
+
+all:
+	$(MAKE) web
+	$(MAKE) run
+
+web:
+	cd web && npm run build
 
 build:
-	cd web && npm install && npm run build
 	go build ./cmd/bangumi
 
-serve: build
+run: build
 	./bangumi serve
-
-all: serve
