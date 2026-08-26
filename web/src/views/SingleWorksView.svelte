@@ -330,7 +330,7 @@
                         >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
                         <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>
                         <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-                          <span class="min-w-0 max-w-full truncate"><Highlight text={roleText(w.roles) || '—'} q={filter} /></span>
+                          <span class="min-w-0 max-w-full truncate leading-7"><Highlight text={roleText(w.roles) || '—'} q={filter} /></span>
                         </span>
                       </div>
                     {/each}
