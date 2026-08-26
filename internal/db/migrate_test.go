@@ -58,6 +58,9 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 	}
 	mustExec(t, conn, `INSERT INTO persons (id, name, type, career, infobox) VALUES (1, '宮崎駿', 1, '[]', '`+personInfobox+`')`)
 	mustExec(t, conn, `INSERT INTO characters (id, role, name, infobox) VALUES (2, 1, 'ルルーシュ・ランペルージ', '`+characterInfobox+`')`)
+	mustExec(t, conn, `INSERT INTO subjects (id, type, name, tags, meta_tags) VALUES
+		(10, 2, 'a', '[{"name":"奇幻","count":3},{"name":"原创","count":1}]', '["小说"]'),
+		(11, 2, 'b', '[{"name":"奇幻","count":2}]', '["小说","社畜"]')`)
 
 	if err := UpgradeSchema(conn); err != nil {
 		t.Fatalf("UpgradeSchema: %v", err)
@@ -91,6 +94,20 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 		t.Errorf("二次升级后 persons.name_cn = %q, err=%v", nameCN, err)
 	}
 	assertFTSHit(t, conn, "persons_fts", "宫崎骏", 1)
+
+	// 标签聚合表应被构建且计数正确（重复调用不叠加）
+	assertTagAgg(t, conn, "subject_tags_agg", "奇幻", 2)
+	assertTagAgg(t, conn, "subject_meta_tags_agg", "小说", 2)
+	assertTagAgg(t, conn, "subject_meta_tags_agg", "社畜", 1)
+}
+
+func assertTagAgg(t *testing.T, conn *sql.DB, table, name string, wantCnt int64) {
+	t.Helper()
+	var cnt int64
+	err := conn.QueryRow(`SELECT cnt FROM `+table+` WHERE name = ?`, name).Scan(&cnt)
+	if err != nil || cnt != wantCnt {
+		t.Errorf("%s[%s] = (%d, %v), want cnt %d", table, name, cnt, err, wantCnt)
+	}
 }
 
 func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
@@ -100,6 +117,8 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	}
 	mustExec(t, conn, `INSERT INTO persons (id, name, name_cn, type) VALUES (1, 'x', '测试中文名', 1)`)
 	mustExec(t, conn, `INSERT INTO characters (id, role, name) VALUES (2, 1, 'z')`)
+	mustExec(t, conn, `INSERT INTO subjects (id, type, name, tags, meta_tags) VALUES
+		(10, 1, 's', '[{"name":"奇幻","count":9}]', '["小说"]')`)
 	if err := FinalizeSchema(conn); err != nil {
 		t.Fatalf("FinalizeSchema: %v", err)
 	}
@@ -108,6 +127,12 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	done, err := metaGet(conn, nameCNBackfillDone)
 	if err != nil || done != "1" {
 		t.Fatalf("schema_meta 标记 = %q, err=%v, want 1", done, err)
+	}
+	// 标签聚合表由导入路径构建并置标记
+	assertTagAgg(t, conn, "subject_tags_agg", "奇幻", 1)
+	assertTagAgg(t, conn, "subject_meta_tags_agg", "小说", 1)
+	if done, err = metaGet(conn, tagStatsBuilt); err != nil || done != "1" {
+		t.Fatalf("tag_stats_built 标记 = %q, err=%v, want 1", done, err)
 	}
 	before := countRows(t, conn, `SELECT COUNT(*) FROM persons WHERE name_cn = ''`)
 	if before != 0 {
