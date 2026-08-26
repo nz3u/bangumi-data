@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"bangumi-subject-go/internal/common"
 	"bangumi-subject-go/internal/db"
 	"bangumi-subject-go/internal/model"
 	"bangumi-subject-go/internal/wiki"
@@ -124,6 +125,32 @@ func Import(ctx context.Context, conn *sql.DB, src string, limit int64) (*Stats,
 
 	log.Printf("全部导入完成：共 %d 行，耗时 %v（含索引 %v）",
 		stats.Total(), time.Since(start).Round(time.Second), time.Since(idxStart).Round(time.Second))
+	return stats, nil
+}
+
+// RunImport 完整导入流程（CLI 的 import 与 update 共用入口）：
+// 加载常量 -> 打开目标库 -> 全量导入 -> 完整性检查，返回前关闭连接。
+func RunImport(ctx context.Context, src string, limit int64, commonDir, dbPath string) (*Stats, error) {
+	if _, err := common.Load(commonDir); err != nil {
+		return nil, err
+	}
+	conn, err := db.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close(conn)
+
+	log.Printf("开始导入 %s -> %s", src, dbPath)
+	start := time.Now()
+	stats, err := Import(ctx, conn, src, limit)
+	if err != nil {
+		return nil, err
+	}
+	log.Print("正在检查数据库完整性...")
+	if err := db.CheckIntegrity(conn); err != nil {
+		return nil, err
+	}
+	log.Printf("完整性检查通过（总耗时 %v）", time.Since(start).Round(time.Second))
 	return stats, nil
 }
 

@@ -13,6 +13,17 @@ services:
       - ./data:/app/data
     restart: unless-stopped
 
+  # 一键下载最新导出并导入/更新（首次运行也会自动完成）
+  #   docker compose run --rm update
+  update:
+    build: .
+    profiles: ["tools"]
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["/app/bangumi", "update"]
+    environment:
+      BANGUMI_DB: /app/data/bangumi.db
+
   # 示例：导入数据（把 dump 放到 ./data/ 下）
   #   docker compose run --rm import /app/data/dump-xxx.zip
   import:

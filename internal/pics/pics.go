@@ -26,13 +26,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"bangumi-subject-go/internal/config"
 	"bangumi-subject-go/internal/db"
 )
 
@@ -129,22 +128,7 @@ func (s *Service) HasKey() bool { return s != nil && s.key != "" }
 // LoadAPIKey 读取 next.bgm.tv API Key：优先环境变量 BANGUMI_API_KEY，
 // 其次 data 目录下 config.json 的 bgm_api_key 字段。均未配置时返回
 // 空串（图片功能停用，Resolve 恒为 failed）。
-func LoadAPIKey(dataDir string) string {
-	if v := strings.TrimSpace(os.Getenv("BANGUMI_API_KEY")); v != "" {
-		return v
-	}
-	b, err := os.ReadFile(filepath.Join(dataDir, "config.json"))
-	if err != nil {
-		return ""
-	}
-	var conf struct {
-		BgmApiKey string `json:"bgm_api_key"`
-	}
-	if json.Unmarshal(b, &conf) != nil {
-		return ""
-	}
-	return strings.TrimSpace(conf.BgmApiKey)
-}
+func LoadAPIKey(dataDir string) string { return config.LoadAPIKey(dataDir) }
 
 // Resolve 解析指定类型图片的状态与 URL（URL 仅在 ok 时非空）。
 // size 决定返回的 CDN 尺寸（l/m/s/g，空或未知值按 l 处理）。

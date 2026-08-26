@@ -27,6 +27,11 @@ export function stats() {
   return request('/stats')
 }
 
+// 数据库版本与上游最新导出对比（右下角徽标与更新提醒）
+export function dbInfo() {
+  return request('/dbinfo')
+}
+
 export function constants() {
   return request('/constants')
 }
