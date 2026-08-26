@@ -212,7 +212,7 @@ internal/
   common/              yaml 常量解析（anchor/alias），id→中文名
   model/               jsonlines 数据结构
   config/              data/config.json（API Key、数据库版本记录）
-  db/                  SQLite 连接与 schema（表/索引/FTS/完整性检查）
+  db/                  SQLite 连接与 schema（表/索引/FTS/倒排映射表/完整性检查）
   download/            latest.json 解析 + 多线程分块下载（Range 并发 + SHA256 校验）
   update/              下载最新导出并导入/更新的编排（临时库换库）
   importer/            zip/jsonlines 流式导入（事务批量）
@@ -243,3 +243,16 @@ git push origin v0.2.0
 - `infobox` 的完整 wiki 语法解析（层级列表/嵌套模板等）尚未实现，当前只提取 `{{Infobox}}` 的 key/value；
   复杂语法可参考 [bangumi/wiki-parser-go](https://github.com/bangumi/wiki-parser-go) 扩展 `internal/wiki`。
 - 搜索使用 FTS5 trigram：≥3 字符走索引，短查询退化为全表扫描，量级上（百万行）可接受。
+
+### 标签搜索性能优化
+
+条目搜索页面的标签/元标签组合筛选（`+必须包含,-必须排除`）曾因 SQLite 子查询逐行扫描导致查询耗时 2-3 秒。
+现已引入**倒排映射表**（`subject_tags_map` / `subject_meta_tags_map`）：导入或启动时自动从 `subjects.tags` JSON 数组
+反向展开为 `(tag_name, subject_id)` 行，覆盖全部 680K 条目的 260 万+映射行。查询时走覆盖索引 `PRIMARY KEY (tag_name, subject_id)`，
+纯标签查询从 ~3000ms 降至 **<200ms**。
+
+映射表在以下时机自动构建：
+- `import` 时通过 `FinalizeSchema` 一次性生成
+- `serve` 启动时通过 `UpgradeSchema` 增量补建（检测 `tag_maps_built` 标志）
+
+构建耗时约 3-4 秒，仅首次运行或数据库迁移后触发。

@@ -95,10 +95,12 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 	}
 	assertFTSHit(t, conn, "persons_fts", "宫崎骏", 1)
 
-	// 标签聚合表应被构建且计数正确（重复调用不叠加）
+	// 标签派生表应被构建且计数正确（重复调用不叠加）
 	assertTagAgg(t, conn, "subject_tags_agg", "奇幻", 2)
 	assertTagAgg(t, conn, "subject_meta_tags_agg", "小说", 2)
 	assertTagAgg(t, conn, "subject_meta_tags_agg", "社畜", 1)
+	assertTagMap(t, conn, "subject_tags_map", "奇幻", []int64{10, 11})
+	assertTagMap(t, conn, "subject_meta_tags_map", "社畜", []int64{11})
 }
 
 func assertTagAgg(t *testing.T, conn *sql.DB, table, name string, wantCnt int64) {
@@ -107,6 +109,36 @@ func assertTagAgg(t *testing.T, conn *sql.DB, table, name string, wantCnt int64)
 	err := conn.QueryRow(`SELECT cnt FROM `+table+` WHERE name = ?`, name).Scan(&cnt)
 	if err != nil || cnt != wantCnt {
 		t.Errorf("%s[%s] = (%d, %v), want cnt %d", table, name, cnt, err, wantCnt)
+	}
+}
+
+func assertTagMap(t *testing.T, conn *sql.DB, table, tag string, wantIDs []int64) {
+	t.Helper()
+	rows, err := conn.Query(`SELECT subject_id FROM `+table+` WHERE tag_name = ? ORDER BY subject_id`, tag)
+	if err != nil {
+		t.Fatalf("查询 %s[%s]: %v", table, tag, err)
+	}
+	defer rows.Close()
+	var got []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if len(got) != len(wantIDs) {
+		t.Errorf("%s[%s] = %v, want %v", table, tag, got, wantIDs)
+		return
+	}
+	for i := range got {
+		if got[i] != wantIDs[i] {
+			t.Errorf("%s[%s] = %v, want %v", table, tag, got, wantIDs)
+			return
+		}
 	}
 }
 
@@ -128,11 +160,16 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	if err != nil || done != "1" {
 		t.Fatalf("schema_meta 标记 = %q, err=%v, want 1", done, err)
 	}
-	// 标签聚合表由导入路径构建并置标记
+	// 标签派生表由导入路径构建并置标记
 	assertTagAgg(t, conn, "subject_tags_agg", "奇幻", 1)
 	assertTagAgg(t, conn, "subject_meta_tags_agg", "小说", 1)
+	assertTagMap(t, conn, "subject_tags_map", "奇幻", []int64{10})
+	assertTagMap(t, conn, "subject_meta_tags_map", "小说", []int64{10})
 	if done, err = metaGet(conn, tagStatsBuilt); err != nil || done != "1" {
 		t.Fatalf("tag_stats_built 标记 = %q, err=%v, want 1", done, err)
+	}
+	if done, err = metaGet(conn, tagMapsBuilt); err != nil || done != "1" {
+		t.Fatalf("tag_maps_built 标记 = %q, err=%v, want 1", done, err)
 	}
 	before := countRows(t, conn, `SELECT COUNT(*) FROM persons WHERE name_cn = ''`)
 	if before != 0 {

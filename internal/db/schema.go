@@ -115,6 +115,21 @@ CREATE TABLE IF NOT EXISTS subject_meta_tags_agg (
     cnt  INTEGER NOT NULL
 );
 
+-- 标签倒排映射表（条目搜索的标签过滤索引）：
+-- 标签名 -> 含该标签的条目 id。搜索时以 IN/NOT IN 子查询替代逐行 json_each 解析，
+-- WITHOUT ROWID 主键即覆盖索引，正标签命中集与负标签排除集均按索引取。
+CREATE TABLE IF NOT EXISTS subject_tags_map (
+    tag_name   TEXT    NOT NULL,
+    subject_id INTEGER NOT NULL,
+    PRIMARY KEY (tag_name, subject_id)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS subject_meta_tags_map (
+    tag_name   TEXT    NOT NULL,
+    subject_id INTEGER NOT NULL,
+    PRIMARY KEY (tag_name, subject_id)
+) WITHOUT ROWID;
+
 -- 一次性数据迁移的完成标记（如 persons/characters.name_cn 回填）。
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
@@ -122,8 +137,9 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 `
 
-// tagStatsPopulateSQL 集合式填充标签聚合表：JSON 展开计数在 SQLite 内部一次完成。
-// INSERT OR REPLACE 保证重复执行幂等（如旧库升级与导入流程重叠时）。
+// tagStatsPopulateSQL 集合式填充标签聚合表与倒排映射表：
+// JSON 展开在 SQLite 内部一次完成。INSERT OR REPLACE 保证重复执行幂等
+// （如旧库升级部分完成后重跑）。
 const tagStatsPopulateSQL = `
 INSERT OR REPLACE INTO subject_tags_agg(name, cnt)
 SELECT COALESCE(je.value->>'name', '') AS name, COUNT(*) AS cnt
@@ -134,6 +150,16 @@ INSERT OR REPLACE INTO subject_meta_tags_agg(name, cnt)
 SELECT COALESCE(mt.value, '') AS name, COUNT(*) AS cnt
 FROM subjects s, json_each(s.meta_tags) mt
 GROUP BY 1 HAVING name <> '';
+
+INSERT OR REPLACE INTO subject_tags_map(tag_name, subject_id)
+SELECT COALESCE(je.value->>'name', ''), s.id
+FROM subjects s, json_each(s.tags) je
+WHERE COALESCE(je.value->>'name', '') <> '';
+
+INSERT OR REPLACE INTO subject_meta_tags_map(tag_name, subject_id)
+SELECT COALESCE(mt.value, ''), s.id
+FROM subjects s, json_each(s.meta_tags) mt
+WHERE COALESCE(mt.value, '') <> '';
 `
 
 // indexSQL 二级索引。在全部数据装载完成后统一创建（FinalizeSchema），
@@ -224,6 +250,8 @@ DROP TABLE IF EXISTS persons_fts;
 DROP TABLE IF EXISTS characters_fts;
 DROP TABLE IF EXISTS subject_tags_agg;
 DROP TABLE IF EXISTS subject_meta_tags_agg;
+DROP TABLE IF EXISTS subject_tags_map;
+DROP TABLE IF EXISTS subject_meta_tags_map;
 `
 
 // InitSchema 创建裸表（不含索引与 FTS），供全量导入快速装载数据。
@@ -232,7 +260,7 @@ func InitSchema(conn *sql.DB) error {
 }
 
 // FinalizeSchema 数据装载完成后调用：创建二级索引、FTS 虚拟表并集合式填充，
-// 同时构建标签/元标签聚合表（条目搜索建议数据源）。
+// 同时构建标签/元标签聚合表与倒排映射表（建议与标签过滤数据源）。
 // 新导入的数据已含 name_cn 列，直接标记回填完成，避免 serve 启动时重复扫描。
 func FinalizeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, indexSQL); err != nil {
@@ -248,7 +276,8 @@ func FinalizeSchema(conn *sql.DB) error {
 		return err
 	}
 	return ExecMulti(conn,
-		`INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('name_cn_backfilled', '1'), ('tag_stats_built', '1')`)
+		`INSERT OR REPLACE INTO schema_meta(key, value)
+		 VALUES ('name_cn_backfilled', '1'), ('tag_stats_built', '1'), ('tag_maps_built', '1')`)
 }
 
 // EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。

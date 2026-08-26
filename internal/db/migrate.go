@@ -7,7 +7,8 @@
 //  2. 逐行解析 infobox 回填「简体中文名」（耗时一次性操作，
 //     完成后写入 schema_meta 标记，之后跳过）
 //  3. FTS 表缺少 name_cn 列时重建并重新填充
-//  4. 构建标签/元标签聚合表（条目搜索建议数据源，tag_stats_built 标记）
+//  4. 构建标签/元标签聚合表与倒排映射表（建议与标签过滤数据源，
+//     tag_stats_built / tag_maps_built 标记）
 package db
 
 import (
@@ -21,6 +22,7 @@ import (
 
 const nameCNBackfillDone = "name_cn_backfilled"
 const tagStatsBuilt = "tag_stats_built"
+const tagMapsBuilt = "tag_maps_built"
 
 // UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS
 // -> 构建标签/元标签聚合表。
@@ -93,10 +95,16 @@ func UpgradeSchema(conn *sql.DB) error {
 		log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
 	}
 
-	// 4. 标签/元标签聚合表（条目搜索建议数据源）：
-	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开统计（新导入的库
+	// 4. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
+	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开构建（新导入的库
 	//    由 FinalizeSchema 构建并置标记，此处直接跳过）。
-	done, err = metaGet(conn, tagStatsBuilt)
+	//    聚合表与映射表使用独立标记：已发布版本只置过 tag_stats_built，
+	//    映射表须按自己的标记补建，不能复用旧标记。
+	statsDone, err := metaGet(conn, tagStatsBuilt)
+	if err != nil {
+		return err
+	}
+	mapsDone, err := metaGet(conn, tagMapsBuilt)
 	if err != nil {
 		return err
 	}
@@ -104,19 +112,32 @@ func UpgradeSchema(conn *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("检查 subject_tags_agg: %w", err)
 	}
-	if done != "1" || !hasAgg {
+	hasMap, err := tableExists(conn, "subject_tags_map")
+	if err != nil {
+		return fmt.Errorf("检查 subject_tags_map: %w", err)
+	}
+	if statsDone != "1" || mapsDone != "1" || !hasAgg || !hasMap {
 		if err := ExecMulti(conn, `CREATE TABLE IF NOT EXISTS subject_tags_agg (
 				name TEXT PRIMARY KEY, cnt INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS subject_meta_tags_agg (
-				name TEXT PRIMARY KEY, cnt INTEGER NOT NULL);`); err != nil {
-			return fmt.Errorf("补建标签聚合表: %w", err)
+				name TEXT PRIMARY KEY, cnt INTEGER NOT NULL);
+			CREATE TABLE IF NOT EXISTS subject_tags_map (
+				tag_name TEXT NOT NULL, subject_id INTEGER NOT NULL,
+				PRIMARY KEY (tag_name, subject_id)) WITHOUT ROWID;
+			CREATE TABLE IF NOT EXISTS subject_meta_tags_map (
+				tag_name TEXT NOT NULL, subject_id INTEGER NOT NULL,
+				PRIMARY KEY (tag_name, subject_id)) WITHOUT ROWID;`); err != nil {
+			return fmt.Errorf("补建标签派生表: %w", err)
 		}
-		n, err := buildTagStats(conn)
+		nAgg, nMap, err := buildTagDerivedTables(conn)
 		if err != nil {
-			return fmt.Errorf("构建标签聚合表: %w", err)
+			return fmt.Errorf("构建标签派生表: %w", err)
 		}
-		log.Printf("已构建标签/元标签聚合表（%d 行，耗时一次性，之后跳过）", n)
+		log.Printf("已构建标签/元标签聚合与倒排映射表（聚合 %d 行、映射 %d 行，耗时一次性，之后跳过）", nAgg, nMap)
 		if err := metaSet(conn, tagStatsBuilt, "1"); err != nil {
+			return err
+		}
+		if err := metaSet(conn, tagMapsBuilt, "1"); err != nil {
 			return err
 		}
 	}
@@ -184,17 +205,21 @@ func tableExists(conn *sql.DB, table string) (bool, error) {
 	return n > 0, err
 }
 
-// buildTagStats 全量展开 subjects.tags / subjects.meta_tags 统计各标签使用次数，
-// 返回聚合总行数。INSERT OR REPLACE 幂等，可重复调用。
-func buildTagStats(conn *sql.DB) (int64, error) {
+// buildTagDerivedTables 全量展开 subjects.tags / subjects.meta_tags，
+// 构建聚合表（标签使用次数）与倒排映射表（标签 -> 条目 id）。
+// INSERT OR REPLACE 幂等，可重复调用；返回聚合行数与映射行数。
+func buildTagDerivedTables(conn *sql.DB) (int64, int64, error) {
 	if err := ExecMulti(conn, tagStatsPopulateSQL); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	var n int64
-	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM subject_tags_agg) + (SELECT COUNT(*) FROM subject_meta_tags_agg)`).Scan(&n); err != nil {
-		return 0, err
+	var nAgg, nMap int64
+	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM subject_tags_agg) + (SELECT COUNT(*) FROM subject_meta_tags_agg)`).Scan(&nAgg); err != nil {
+		return 0, 0, err
 	}
-	return n, nil
+	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM subject_tags_map) + (SELECT COUNT(*) FROM subject_meta_tags_map)`).Scan(&nMap); err != nil {
+		return 0, 0, err
+	}
+	return nAgg, nMap, nil
 }
 
 // backfillNameCN 全表扫描 name_cn 为空的行，解析 infobox 提取「简体中文名」后批量更新。
