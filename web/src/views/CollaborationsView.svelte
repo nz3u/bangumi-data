@@ -1,9 +1,10 @@
-<script>
+﻿<script>
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
+ import Highlight from '../components/Highlight.svelte'
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
@@ -188,11 +189,37 @@
     subjOverrides = {}
   }
 
-  // 当前卡片应渲染的条目：收缩时截断到前 N 条
+  // 条目是否会被快速筛选标上高亮（与 Highlight 组件的匹配语义一致：
+  // 标题/职位字面子串，或拼音首字母/全拼命中）
+  function subjHasMark(s) {
+    const q = filter.trim()
+    if (!q) return false
+    const k = q.toLowerCase()
+    const title = String(s.name_cn || s.name)
+    if (title.toLowerCase().includes(k)) return true
+    const roles = (s.roles ?? []).join(' / ')
+    if (roles.toLowerCase().includes(k)) return true
+    return !!PinyinMatch.match(title, q) || !!PinyinMatch.match(roles, q)
+  }
+
+  // 当前卡片应渲染的条目：收缩时截断到前 N 条。
+  // 快速筛选时把命中（会高亮）的条目排到最前——否则截断预览可能把
+  // 命中的条目藏在「展开全部」里，出现“有高亮但看不见”的情况。
   function shownSubjects(col) {
-    return !subjExpanded(col.person_id) && col.subjects.length > COLLAB_PREVIEW_N
-      ? col.subjects.slice(0, COLLAB_PREVIEW_N)
-      : col.subjects
+    const collapsed = !subjExpanded(col.person_id) && col.subjects.length > COLLAB_PREVIEW_N
+    if (!filter.trim()) {
+      return collapsed ? col.subjects.slice(0, COLLAB_PREVIEW_N) : col.subjects
+    }
+    const hitIds = new Set()
+    for (const s of col.subjects) if (subjHasMark(s)) hitIds.add(s.id)
+    if (hitIds.size === 0) {
+      return collapsed ? col.subjects.slice(0, COLLAB_PREVIEW_N) : col.subjects
+    }
+    const ordered = [
+      ...col.subjects.filter((s) => hitIds.has(s.id)),
+      ...col.subjects.filter((s) => !hitIds.has(s.id))
+    ]
+    return collapsed ? ordered.slice(0, COLLAB_PREVIEW_N) : ordered
   }
 
   const hasCollapsible = $derived((data?.items ?? []).some((c) => (c.subjects?.length ?? 0) > COLLAB_PREVIEW_N))
@@ -224,7 +251,7 @@
   })
 </script>
 
-<div class="grid gap-4">
+<div class="grid grid-cols-[minmax(0,1fr)] gap-4">
   <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
     <div>
       <label class="label" for="collab-pid">人物 ID</label>
@@ -533,7 +560,7 @@
                   />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
-                      <button type="button" class="cursor-pointer font-medium text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', col.person_id, col)}>{col.name}</button>
+                      <button type="button" class="cursor-pointer font-medium text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} /></button>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
                         {#if !subjExpanded(col.person_id)}
@@ -557,13 +584,13 @@
                       {/if}
                     </h3>
                     <div class="mt-1 flex flex-wrap items-center gap-1">
-                      <span class="chip">{col.type_name}</span>
+                      <span class="chip"><Highlight text={col.type_name} q={filter} /></span>
                       {#each col.career ?? [] as cb}
-                        <span class="chip">{careerCn(cb)}</span>
+                        <span class="chip"><Highlight text={careerCn(cb)} q={filter} /></span>
                       {/each}
                     </div>
                     {#if col.summary}
-                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{col.summary}</p>
+                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400"><Highlight text={col.summary} q={filter} /></p>
                     {/if}
                     <div class="truncate subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each shownSubjects(col) as s (s.id)}
@@ -573,9 +600,9 @@
                             onclick={() => openDetail('subject', s.id, s)}
                             class="cursor-pointer truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
                             title={`${s.date || '未知日期'} · ${s.type_name}${s.roles.length ? ' · ' + s.roles.join(' / ') : ''}`}
-                          >{s.name_cn || s.name}</button>
+                          ><Highlight text={s.name_cn || s.name} q={filter} /></button>
                           {#if s.roles.length}
-                            <small class="shrink-0 text-[11px] text-neutral-400">{s.roles.join(' / ')}</small>
+                            <small class="shrink-0 text-[11px] text-neutral-400"><Highlight text={s.roles.join(' / ')} q={filter} /></small>
                             <!--small class="w-full min-w-0 truncate text-[11px] text-neutral-400">{s.roles.join(' / ')}</small-->
                           {/if}
                         </span>

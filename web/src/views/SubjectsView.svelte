@@ -4,6 +4,7 @@
   import { loadConstants, platformsFor, enumList, AUTO_SEARCH_DEBOUNCE_MS } from '../lib/constants.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
  import Pagination from '../components/Pagination.svelte'
+ import Highlight from '../components/Highlight.svelte'
  import { openDetail } from '../lib/detail.svelte.js'
  import { externalUrl } from '../lib/settings.svelte.js'
 
@@ -235,12 +236,12 @@
                 <td>{it.type_name}</td>
                 <td class="max-w-52 truncate">
                   {#if it.name_cn}
-                    <a href={externalUrl('subject', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{it.name_cn}</a>
+                    <a href={externalUrl('subject', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}><Highlight text={it.name_cn} q={f.q} /></a>
                   {:else}
                     —
                   {/if}
                 </td>
-                <td class="max-w-52 truncate text-neutral-500 dark:text-neutral-400">{it.name}</td>
+                <td class="max-w-52 truncate text-neutral-500 dark:text-neutral-400"><Highlight text={it.name} q={f.q} /></td>
                 <td>{it.platform_name}</td>
                 <td>{fmtDate(it.date)}</td>
                 <td class="text-amber-600 dark:text-amber-400">{fmtScore(it.score)}</td>
