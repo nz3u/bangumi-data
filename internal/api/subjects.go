@@ -19,7 +19,7 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	var (
 		conds    []string
 		args     []any
-		fullScan bool // 过滤条件必须逐行求值（LIKE 回退/json_each），无法利用索引
+		fullScan bool // 过滤条件必须逐行求值（LIKE 回退），无法利用索引
 	)
 
 	if q != "" {
@@ -84,12 +84,10 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		args = append(args, v)
 	}
 	if v := parseTagCombo(c.Query("tag")); len(v.pos) > 0 || len(v.neg) > 0 {
-		fullScan = true
-		conds, args = appendTagFilters(conds, args, "s.tags", "te.value->>'name'", v.pos, v.neg)
+		conds, args = appendTagFilters(conds, args, "subject_tags_map", v.pos, v.neg)
 	}
 	if v := parseTagCombo(c.Query("meta_tag")); len(v.pos) > 0 || len(v.neg) > 0 {
-		fullScan = true
-		conds, args = appendTagFilters(conds, args, "s.meta_tags", "te.value", v.pos, v.neg)
+		conds, args = appendTagFilters(conds, args, "subject_meta_tags_map", v.pos, v.neg)
 	}
 
 	page, size := pagination(c)
@@ -124,7 +122,9 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	//   - 过滤条件可走索引时拆成两条查询——数据查询按主键序取满一页即提前终止，
 	//     COUNT(*) 仅扫描索引；避免 COUNT(*) OVER() 窗口函数强制整表物化
 	//     （无过滤时 67 万行全表扫描需数秒，拆分后 <20ms）。
-	//   - 过滤条件必须逐行求值（LIKE/json_each）时，两次扫描代价翻倍，
+	//     标签过滤经倒排映射表（subject_tags_map 等）转为 IN/NOT IN 子查询，
+	//     同样可走索引，不再逐行解析 JSON。
+	//   - 过滤条件必须逐行求值（LIKE 回退）时，两次扫描代价翻倍，
 	//     保留 COUNT(*) OVER() 合并为一次扫描更划算。
 	dataSQL := "SELECT " + subjectBriefCols + " FROM subjects s" + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
 	var totalPtr *int64
@@ -186,17 +186,16 @@ func parseTagCombo(raw string) tagCombo {
 	return v
 }
 
-// appendTagFilters 追加正/负标签条件：正标签 EXISTS 要求存在，负标签 NOT EXISTS 要求不存在。
-// src 为 JSON 数组列（如 s.tags），valExpr 为 json_each 展开值的取值表达式
-// （普通标签取 te.value->>'name'，元标签数组元素直接取 te.value）。
-func appendTagFilters(conds []string, args []any, src, valExpr string, pos, neg []string) ([]string, []any) {
-	exists := "EXISTS (SELECT 1 FROM json_each(" + src + ") te WHERE " + valExpr + " = ?)"
+// appendTagFilters 追加正/负标签条件：基于倒排映射表（标签名 -> subject_id）的
+// 索引子查询，替代逐行 json_each 解析（68 万行全表 JSON 解析是标签搜索慢的主因）。
+// 正标签 EXISTS 语义 = s.id IN (命中集)；负标签 NOT EXISTS 语义 = NOT IN (排除集)。
+func appendTagFilters(conds []string, args []any, mapTable string, pos, neg []string) ([]string, []any) {
 	for _, t := range pos {
-		conds = append(conds, exists)
+		conds = append(conds, "s.id IN (SELECT subject_id FROM "+mapTable+" WHERE tag_name = ?)")
 		args = append(args, t)
 	}
 	for _, t := range neg {
-		conds = append(conds, "NOT "+exists)
+		conds = append(conds, "s.id NOT IN (SELECT subject_id FROM "+mapTable+" WHERE tag_name = ?)")
 		args = append(args, t)
 	}
 	return conds, args
