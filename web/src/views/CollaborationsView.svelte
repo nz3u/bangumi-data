@@ -451,24 +451,7 @@
 
         <h2 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-semibold subtitle">
           <span>与「{data.person.name}」合作的人物（{data.total}）</span>
-          {#if hasCollapsible}
-            <button
-              type="button"
-              class="ml-auto inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
-              title={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
-              aria-label={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
-              onclick={toggleAllSubj}
-            >
-              <svg
-                class="size-4 transition-transform duration-150"
-                class:rotate-180={expandAllSubj}
-                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-              >
-                <path d="m7 6 5 5 5-5" />
-                <path d="m7 13 5 5 5-5" />
-              </svg>
-            </button>
-          {/if}
+          
           {#if facets && (selA.length > 0 || selB.length > 0)}
             <span class="text-xs font-normal text-neutral-500 dark:text-neutral-400">
               已选组合：
@@ -486,6 +469,24 @@
               <span class="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
               更新中…
             </span>
+          {/if}
+          {#if hasCollapsible}
+            <button
+              type="button"
+              class="ml-auto inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+              title={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
+              aria-label={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
+              onclick={toggleAllSubj}
+            >
+              <svg
+                class="size-4 transition-transform duration-150"
+                class:rotate-180={expandAllSubj}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              >
+                <path d="m7 6 5 5 5-5" />
+                <path d="m7 13 5 5 5-5" />
+              </svg>
+            </button>
           {/if}
         </h2>
 
