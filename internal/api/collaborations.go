@@ -29,24 +29,37 @@ const collaborationAppCTE = `app AS (
 // ---- 棋盘筛选：按人物职位标签组合过滤 ----
 
 // collabRoleFilter 一组职位标签（多选）：staff 为「作品类型:职位 id」组合，cv 表示声优出演。
+// negStaff 为负标签（排除），cvNeg 表示排除声优出演。
 type collabRoleFilter struct {
-	staff [][2]int
-	cv    bool
+	staff   [][2]int
+	negStaff [][2]int
+	cv      bool
+	cvNeg   bool
 }
 
-func (f collabRoleFilter) empty() bool { return len(f.staff) == 0 && !f.cv }
+func (f collabRoleFilter) empty() bool { return len(f.staff) == 0 && len(f.negStaff) == 0 && !f.cv && !f.cvNeg }
 
-// parseCollabRoles 解析逗号分隔的职位标签参数（如 "2:1,cv,1:4"），非法项忽略。
+// parseCollabRoles 解析逗号分隔的职位标签参数（如 "2:1,cv,-2:10"），非法项忽略。
+// 前缀 "-" 表示负标签（排除），如 "-2:1" 表示排除 type=2, position=1 的职位。
 func parseCollabRoles(param string) collabRoleFilter {
 	var f collabRoleFilter
 	seen := map[[2]int]bool{}
+	negSeen := map[[2]int]bool{}
 	for _, part := range strings.Split(param, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
+		neg := strings.HasPrefix(part, "-")
+		if neg {
+			part = part[1:]
+		}
 		if strings.EqualFold(part, "cv") {
-			f.cv = true
+			if neg {
+				f.cvNeg = true
+			} else {
+				f.cv = true
+			}
 			continue
 		}
 		typStr, posStr, ok := strings.Cut(part, ":")
@@ -56,9 +69,16 @@ func parseCollabRoles(param string) collabRoleFilter {
 			continue
 		}
 		key := [2]int{typ, pos}
-		if !seen[key] {
-			seen[key] = true
-			f.staff = append(f.staff, key)
+		if neg {
+			if !negSeen[key] {
+				negSeen[key] = true
+				f.negStaff = append(f.negStaff, key)
+			}
+		} else {
+			if !seen[key] {
+				seen[key] = true
+				f.staff = append(f.staff, key)
+			}
 		}
 	}
 	return f
@@ -75,30 +95,103 @@ func staffConds(typeCol, posCol string, keys [][2]int) (string, []any) {
 	return strings.Join(conds, " OR "), args
 }
 
+// negStaffExists 生成负标签排除的 NOT EXISTS 子查询。
+// 检查 subject_persons 中是否存在匹配负标签的记录，存在则排除。
+// 如果 personID 为 nil，则使用外层查询的 sp.person_id 列（用于 attachCollabSubjects 等场景）。
+func negStaffExists(keys [][2]int, personID any) (string, []any) {
+	if len(keys) == 0 {
+		return "", nil
+	}
+	conds := make([]string, 0, len(keys))
+	args := make([]any, 0, len(keys)*2)
+	for _, k := range keys {
+		conds = append(conds, "(sa_neg.type = ? AND sp_neg.position = ?)")
+		args = append(args, k[0], k[1])
+	}
+	personCond := "sp_neg.person_id = ?"
+	if personID == nil {
+		// 使用外层查询的 sp.person_id 列
+		personCond = "sp_neg.person_id = sp.person_id"
+	}
+	subQuery := `NOT EXISTS (
+		SELECT 1 FROM subject_persons sp_neg 
+		CROSS JOIN subjects sa_neg ON sa_neg.id = sp_neg.subject_id 
+		WHERE sp_neg.subject_id = sp.subject_id 
+		AND ` + personCond + `
+		AND (` + strings.Join(conds, " OR ") + `)
+	)`
+	if personID == nil {
+		return subQuery, args
+	}
+	// person_id 参数放在最前面
+	return subQuery, append([]any{personID}, args...)
+}
+
 // buildCollabAppCTE 组装 app CTE（被搜索人物的出现条目集）。
 // fa 启用时仅保留其担任所选职位的条目；返回 CTE 文本与按序参数。
+// 负标签通过 NOT EXISTS 排除匹配的条目。
 func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 	if fa.empty() {
 		return collaborationAppCTE, []any{id, id}
 	}
 	var branches []string
 	var args []any
-	if len(fa.staff) > 0 {
-		cond, cargs := staffConds("sa.type", "sp.position", fa.staff)
-		branches = append(branches, `SELECT sp.subject_id FROM subject_persons sp
+
+	// 判断是否需要添加 staff 分支
+	hasPosStaff := len(fa.staff) > 0
+	hasNegStaff := len(fa.negStaff) > 0
+	hasAnyFilter := hasPosStaff || hasNegStaff || fa.cv || fa.cvNeg
+
+	if hasAnyFilter {
+		// 构建 staff 分支的 WHERE 条件
+		var whereParts []string
+		var whereArgs []any
+
+		if hasPosStaff {
+			// 有正标签：只包含匹配的职位
+			cond, cargs := staffConds("sa.type", "sp.position", fa.staff)
+			whereParts = append(whereParts, "("+cond+")")
+			whereArgs = append(whereArgs, cargs...)
+		}
+		// 如果没有正标签但有负标签，不添加条件（包含所有 staff）
+
+		// 添加负标签排除条件（NOT EXISTS）
+		if hasNegStaff {
+			negCond, negArgs := negStaffExists(fa.negStaff, id)
+			if negCond != "" {
+				whereParts = append(whereParts, negCond)
+				whereArgs = append(whereArgs, negArgs...)
+			}
+		}
+
+		whereClause := "1=1"
+		if len(whereParts) > 0 {
+			whereClause = strings.Join(whereParts, " AND ")
+		}
+
+		branch := `SELECT sp.subject_id FROM subject_persons sp
 			CROSS JOIN subjects sa ON sa.id = sp.subject_id
-			WHERE sp.person_id = ? AND (`+cond+`)`)
-		args = append(append(args, id), cargs...)
+			WHERE sp.person_id = ? AND ` + whereClause
+		args = append(args, id)
+		args = append(args, whereArgs...)
+		branches = append(branches, branch)
 	}
-	if fa.cv {
+
+	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除
+	if fa.cv || fa.cvNeg {
 		branches = append(branches, `SELECT pc.subject_id FROM person_characters pc WHERE pc.person_id = ?`)
 		args = append(args, id)
+	}
+
+	if len(branches) == 0 {
+		return collaborationAppCTE, []any{id, id}
 	}
 	return "app AS (" + strings.Join(branches, "\n\t\tUNION\n\t\t") + ")", args
 }
 
 // buildCollabPairsCTE 组装 pairs CTE（(合作人物, 共同条目) 对）。
 // fb 启用时仅保留合作人物担任所选职位的条目对；返回 CTE 文本与按序参数。
+// 负标签通过 NOT EXISTS 排除匹配的条目。
 //
 // CROSS JOIN 强制以 app（小结果集）为外层循环：`person_id <> ?` 这类
 // 非等值条件无法用作索引约束，普通 JOIN 下优化器可能误选对
@@ -113,15 +206,48 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 		)`, []any{id, id}
 	}
-	joinSubjects, cond, condArgs := "", "1=0", []any{}
-	if len(fb.staff) > 0 {
+
+	hasPosStaff := len(fb.staff) > 0
+	hasNegStaff := len(fb.negStaff) > 0
+	joinSubjects := ""
+	cond := "1=1"
+	var condArgs []any
+
+	if hasPosStaff || hasNegStaff {
 		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
-		cond, condArgs = staffConds("sb.type", "sp.position", fb.staff)
+		// 构建 staff 分支的 WHERE 条件
+		var condParts []string
+		if hasPosStaff {
+			condStr, cargs := staffConds("sb.type", "sp.position", fb.staff)
+			condParts = append(condParts, "("+condStr+")")
+			condArgs = append(condArgs, cargs...)
+		}
+		// 添加负标签排除条件（NOT EXISTS）
+		if hasNegStaff {
+			negCond, negArgs := negStaffExists(fb.negStaff, id)
+			if negCond != "" {
+				condParts = append(condParts, negCond)
+				condArgs = append(condArgs, negArgs...)
+			}
+		}
+		if len(condParts) > 0 {
+			cond = strings.Join(condParts, " AND ")
+		}
 	}
-	cvCond := "1=0"
-	if fb.cv {
-		cvCond = "1=1"
+
+	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除（WHERE 1=0）
+	cvCond := "1=1"
+	if fb.cv && !fb.cvNeg {
+		cvCond = "1=1" // 包含 CV
+	} else if fb.cvNeg {
+		cvCond = "1=0" // 排除 CV
+	} else if !fb.cv && !fb.cvNeg && !hasPosStaff && !hasNegStaff {
+		cvCond = "1=1" // 无任何筛选时包含 CV
+	} else {
+		// 有 staff 筛选但无 CV 筛选：不包含 CV（只看 staff）
+		cvCond = "1=0"
 	}
+
 	sql := `pairs AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid
 			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id <> ?` +
@@ -132,7 +258,11 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 			FROM app ap CROSS JOIN person_characters pc ON pc.subject_id = ap.subject_id AND pc.person_id <> ?
 			WHERE ` + cvCond + `
 		)`
-	return sql, append(append([]any{id}, condArgs...), id)
+	// 参数：id（sp.person_id <> ?）, condArgs, id（pc.person_id <> ?）
+	args := []any{id}
+	args = append(args, condArgs...)
+	args = append(args, id)
+	return sql, args
 }
 
 // collabPerson 左侧展示的人物简介。
@@ -297,15 +427,41 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	// 明细行筛选与 pairs 同口径：fb 为空时全部保留；
 	// 否则制作行须命中所选职位组合、CV 行仅在勾选 cv 标签时保留。
 	joinSubjects, staffCond, staffArgs := "", "1=1", []any{}
-	if !fb.empty() {
-		staffCond = "1=0"
-		if len(fb.staff) > 0 {
-			joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
-			staffCond, staffArgs = staffConds("sb.type", "sp.position", fb.staff)
+	hasPosStaff := len(fb.staff) > 0
+	hasNegStaff := len(fb.negStaff) > 0
+
+	if hasPosStaff || hasNegStaff {
+		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
+		// 构建 staff 分支的 WHERE 条件
+		var condParts []string
+		if hasPosStaff {
+			condStr, cargs := staffConds("sb.type", "sp.position", fb.staff)
+			condParts = append(condParts, "("+condStr+")")
+			staffArgs = append(staffArgs, cargs...)
+		}
+		// 添加负标签排除条件（NOT EXISTS）
+		if hasNegStaff {
+			negCond, negArgs := negStaffExists(fb.negStaff, nil) // nil 表示使用外层 sp.person_id
+			if negCond != "" {
+				condParts = append(condParts, negCond)
+				staffArgs = append(staffArgs, negArgs...)
+			}
+		}
+		if len(condParts) > 0 {
+			staffCond = strings.Join(condParts, " AND ")
 		}
 	}
+
+	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除
 	cvCond := "1=1"
-	if !fb.empty() && !fb.cv {
+	if fb.cv && !fb.cvNeg {
+		cvCond = "1=1" // 包含 CV
+	} else if fb.cvNeg {
+		cvCond = "1=0" // 排除 CV
+	} else if !fb.cv && !fb.cvNeg && !hasPosStaff && !hasNegStaff {
+		cvCond = "1=1" // 无任何筛选时包含 CV
+	} else {
+		// 有 staff 筛选但无 CV 筛选：不包含 CV（只看 staff）
 		cvCond = "1=0"
 	}
 

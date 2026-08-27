@@ -25,8 +25,10 @@
   let currentPid = $state(null) // 当前已查询的人物 ID
   let facets = $state(null) // { self: 当前人物职位标签, other: 合作人物职位标签 }
   let facetsError = $state('')
-  let selA = $state([]) // 左侧：当前人物职位（多选 key）
-  let selB = $state([]) // 上侧：合作人物职位（多选 key）
+  let selA = $state([]) // 左侧：当前人物职位（多选 key，正标签）
+  let selB = $state([]) // 上侧：合作人物职位（多选 key，正标签）
+  let negSelA = $state([]) // 左侧：当前人物职位（多选 key，负标签）
+  let negSelB = $state([]) // 上侧：合作人物职位（多选 key，负标签）
 
   // ---- 前端快速搜索 ----
   let filter = $state('')
@@ -43,7 +45,9 @@
   }
 
   function buildParams(p) {
-    return { page: p, size, positions_a: selA.join(','), positions_b: selB.join(',') }
+    const posA = selA.map((k) => k).concat(negSelA.map((k) => '-' + k)).join(',')
+    const posB = selB.map((k) => k).concat(negSelB.map((k) => '-' + k)).join(',')
+    return { page: p, size, positions_a: posA, positions_b: posB }
   }
 
   let reqSeq = 0 // 连续点击标签时的过期响应保护
@@ -84,6 +88,8 @@
     currentPid = pid
     selA = []
     selB = []
+    negSelA = []
+    negSelB = []
     filter = ''
     tagQA = ''
     tagQB = ''
@@ -121,24 +127,54 @@
     })
   )
 
-  // 点击棋盘标签：切换选中并自动重新请求（回到第 1 页）
-  function toggleTag(side, key) {
+  // 点击棋盘标签：左键切换正标签，右键切换负标签
+  function toggleTag(side, key, negative = false) {
     if (!currentPid || loading) return
-    if (side === 'a') {
-      selA = selA.includes(key) ? selA.filter((k) => k !== key) : [...selA, key]
+    if (negative) {
+      // 右键：切换负标签
+      const negSel = side === 'a' ? negSelA : negSelB
+      const posSel = side === 'a' ? selA : selB
+      if (negSel.includes(key)) {
+        // 已是负标签，取消
+        if (side === 'a') negSelA = negSelA.filter((k) => k !== key)
+        else negSelB = negSelB.filter((k) => k !== key)
+      } else {
+        // 先从正标签中移除，再加入负标签
+        if (posSel.includes(key)) {
+          if (side === 'a') selA = selA.filter((k) => k !== key)
+          else selB = selB.filter((k) => k !== key)
+        }
+        if (side === 'a') negSelA = [...negSelA, key]
+        else negSelB = [...negSelB, key]
+      }
     } else {
-      selB = selB.includes(key) ? selB.filter((k) => k !== key) : [...selB, key]
+      // 左键：切换正标签
+      const negSel = side === 'a' ? negSelA : negSelB
+      if (selA.includes(key) || (side === 'b' && selB.includes(key))) {
+        if (side === 'a') selA = selA.filter((k) => k !== key)
+        else selB = selB.filter((k) => k !== key)
+      } else {
+        // 先从负标签中移除，再加入正标签
+        if (negSel.includes(key)) {
+          if (side === 'a') negSelA = negSelA.filter((k) => k !== key)
+          else negSelB = negSelB.filter((k) => k !== key)
+        }
+        if (side === 'a') selA = [...selA, key]
+        else selB = [...selB, key]
+      }
     }
     load(currentPid, 1)
   }
 
   function clearTags(side) {
     if (!currentPid || loading) return
-    if (side === 'a' && selA.length) {
+    if (side === 'a' && (selA.length || negSelA.length)) {
       selA = []
+      negSelA = []
       load(currentPid, 1)
-    } else if (side === 'b' && selB.length) {
+    } else if (side === 'b' && (selB.length || negSelB.length)) {
       selB = []
+      negSelB = []
       load(currentPid, 1)
     }
   }
@@ -150,15 +186,19 @@
 
   // 一键重置两组棋盘标签并重新请求
   function clearAllTags() {
-    if (!currentPid || loading || (!selA.length && !selB.length)) return
+    if (!currentPid || loading || (!selA.length && !selB.length && !negSelA.length && !negSelB.length)) return
     selA = []
     selB = []
+    negSelA = []
+    negSelB = []
     load(currentPid, 1)
   }
 
   // 已选 key 列表转标签文本（用于小标题右侧的已选组合展示）
-  function selLabelStr(list, keys) {
-    return keys.map((k) => list?.find((t) => t.key === k)?.label ?? k).join(' / ') || '不限'
+  function selLabelStr(list, keys, negKeys = []) {
+    const posLabels = keys.map((k) => list?.find((t) => t.key === k)?.label ?? k)
+    const negLabels = negKeys.map((k) => '!' + (list?.find((t) => t.key === k)?.label ?? k))
+    return [...posLabels, ...negLabels].join(' / ') || '不限'
   }
 
   // 各侧按搜索词过滤后的职位标签（悬浮轨与窄屏框共用）。
@@ -227,6 +267,7 @@
   const tagIdleCls =
     'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'
   const tagOnCls = 'rounded-full bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sky-500'
+  const tagNegCls = 'rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 line-through decoration-red-500 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900'
 
   // ---- 前端快速搜索 ----
   // 搜索范围覆盖当前页全部展示内容：名称、类型、职业、简介、共同条目（标题/日期/类型/职位）。
@@ -280,7 +321,7 @@
           >
             <div class="flex items-center justify-between gap-1 px-1 pt-0.5">
               <span class="text-[11px] font-semibold leading-tight">当前人物职位</span>
-              {#if selA.length > 0}
+              {#if selA.length > 0 || negSelA.length > 0}
                 <button class="btn-mini shrink-0" type="button" onclick={() => clearTags('a')}>清除</button>
               {/if}
             </div>
@@ -296,9 +337,10 @@
               {#each selfTagsShown as t (t.key)}
                 <button
                   type="button"
-                  class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${selA.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
-                  title={`筛选当前人物担任「${t.label}」的共同条目`}
-                  onclick={() => toggleTag('a', t.key)}
+                  class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${negSelA.includes(t.key) ? tagNegCls : selA.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
+                  title={`左键：包含「${t.label}」· 右键：排除「${t.label}」`}
+                  onclick={() => toggleTag('a', t.key, false)}
+                  oncontextmenu={(e) => { e.preventDefault(); toggleTag('a', t.key, true) }}
                 >
                   <span class="min-w-0 truncate">{t.label}</span><small class="shrink-0 opacity-70">{t.count}</small>
                 </button>
@@ -317,11 +359,11 @@
           >
             <div class="flex items-center justify-between gap-1 px-1">
               <span class="text-xs font-semibold">合作人物职位</span>
-              {#if selB.length > 0}
+              {#if selB.length > 0 || negSelB.length > 0}
                 <button class="btn-mini" type="button" onclick={() => clearTags('b')}>清除</button>
               {/if}
             </div>
-            <p class="mb-1 mt-0.5 px-1 text-[11px] leading-tight text-neutral-400">点击筛选 · 可多选</p>
+            <p class="mb-1 mt-0.5 px-1 text-[11px] leading-tight text-neutral-400">左键包含 · 右键排除 · 可多选</p>
             <input
               class="input-xs shrink-0"
               type="search"
@@ -334,9 +376,10 @@
               {#each otherTagsShown as t (t.key)}
                 <button
                   type="button"
-                  class={`w-full shrink-0 ${selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
-                  title={`筛选担任「${t.label}」的合作人物`}
-                  onclick={() => toggleTag('b', t.key)}
+                  class={`w-full shrink-0 ${negSelB.includes(t.key) ? tagNegCls : selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
+                  title={`左键：包含「${t.label}」· 右键：排除「${t.label}」`}
+                  onclick={() => toggleTag('b', t.key, false)}
+                  oncontextmenu={(e) => { e.preventDefault(); toggleTag('b', t.key, true) }}
                 >
                   <span class="min-w-0 truncate">{t.label}</span><small class="ml-1 shrink-0 opacity-70">{t.count}</small>
                 </button>
@@ -411,8 +454,8 @@
           <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 min-[1440px]:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                <span>当前人物职位{selA.length > 0 ? `（已选 ${selA.length}）` : '（可多选）'}</span>
-                {#if selA.length > 0}
+                <span>当前人物职位{selA.length > 0 || negSelA.length > 0 ? `（已选 ${selA.length + negSelA.length}）` : '（可多选）'}</span>
+                {#if selA.length > 0 || negSelA.length > 0}
                   <button class="btn-mini" type="button" onclick={() => clearTags('a')}>清除</button>
                 {/if}
               </div>
@@ -427,9 +470,10 @@
                 {#each selfTagsShown as t (t.key)}
                   <button
                     type="button"
-                    class={`shrink-0 ${selA.includes(t.key) ? tagOnCls : tagIdleCls}`}
-                    title={`筛选当前人物担任「${t.label}」的共同条目`}
-                    onclick={() => toggleTag('a', t.key)}
+                    class={`shrink-0 ${negSelA.includes(t.key) ? tagNegCls : selA.includes(t.key) ? tagOnCls : tagIdleCls}`}
+                    title={`左键：包含「${t.label}」· 右键：排除「${t.label}」`}
+                    onclick={() => toggleTag('a', t.key, false)}
+                    oncontextmenu={(e) => { e.preventDefault(); toggleTag('a', t.key, true) }}
                   >
                     {t.label}<small class="ml-0.5 opacity-70">{t.count}</small>
                   </button>
@@ -442,8 +486,8 @@
           <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 2xl:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                <span>合作人物职位{selB.length > 0 ? `（已选 ${selB.length}）` : '（可多选）'}</span>
-                {#if selB.length > 0}
+                <span>合作人物职位{selB.length > 0 || negSelB.length > 0 ? `（已选 ${selB.length + negSelB.length}）` : '（可多选）'}</span>
+                {#if selB.length > 0 || negSelB.length > 0}
                   <button class="btn-mini" type="button" onclick={() => clearTags('b')}>清除</button>
                 {/if}
               </div>
@@ -458,9 +502,10 @@
                 {#each otherTagsShown as t (t.key)}
                   <button
                     type="button"
-                    class={`shrink-0 ${selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
-                    title={`筛选担任「${t.label}」的合作人物`}
-                    onclick={() => toggleTag('b', t.key)}
+                    class={`shrink-0 ${negSelB.includes(t.key) ? tagNegCls : selB.includes(t.key) ? tagOnCls : tagIdleCls}`}
+                    title={`左键：包含「${t.label}」· 右键：排除「${t.label}」`}
+                    onclick={() => toggleTag('b', t.key, false)}
+                    oncontextmenu={(e) => { e.preventDefault(); toggleTag('b', t.key, true) }}
                   >
                     {t.label}<small class="ml-0.5 opacity-70">{t.count}</small>
                   </button>
@@ -479,12 +524,12 @@
         <h2 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-semibold subtitle">
           <span>与「{data.person.name}」合作的人物（{data.total}）</span>
           
-          {#if facets && (selA.length > 0 || selB.length > 0)}
+          {#if facets && (selA.length > 0 || selB.length > 0 || negSelA.length > 0 || negSelB.length > 0)}
             <span class="text-xs font-normal text-neutral-500 dark:text-neutral-400">
               已选组合：
-              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.self, selA)}</b>
+              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.self, selA, negSelA)}</b>
               ×
-              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.other, selB)}</b>
+              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.other, selB, negSelB)}</b>
               <button class="btn-mini ml-1" type="button" onclick={clearAllTags}>重置</button>
             </span>
           {/if}
@@ -538,7 +583,7 @@
         <div class="grid min-w-0 w-full gap-3" in:fade={{ duration: 150 }}>
         {#if data.items.length === 0}
           <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">
-            {(selA.length > 0 || selB.length > 0) ? '该职位组合下未找到合作记录' : '未找到合作记录'}
+            {(selA.length > 0 || selB.length > 0 || negSelA.length > 0 || negSelB.length > 0) ? '该职位组合下未找到合作记录' : '未找到合作记录'}
           </div>
         {:else if visibleItems && visibleItems.length === 0}
           <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">无匹配内容</div>
