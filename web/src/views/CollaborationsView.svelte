@@ -45,8 +45,11 @@
   }
 
   function buildParams(p) {
-    const posA = selA.map((k) => k).concat(negSelA.map((k) => '-' + k)).join(',')
-    const posB = selB.map((k) => k).concat(negSelB.map((k) => '-' + k)).join(',')
+    // 一个显示标签可能合并多个 "类型:职位" 键。负号必须分别加到每个键上，
+    // 否则如 "-2:1,4:2" 会被服务端解析为负 2:1 加正 4:2。
+    const negativeKeys = (keys) => keys.flatMap((key) => key.split(',').map((part) => '-' + part))
+    const posA = selA.concat(negativeKeys(negSelA)).join(',')
+    const posB = selB.concat(negativeKeys(negSelB)).join(',')
     return { page: p, size, positions_a: posA, positions_b: posB }
   }
 

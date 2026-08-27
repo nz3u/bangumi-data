@@ -31,13 +31,15 @@ const collaborationAppCTE = `app AS (
 // collabRoleFilter 一组职位标签（多选）：staff 为「作品类型:职位 id」组合，cv 表示声优出演。
 // negStaff 为负标签（排除），cvNeg 表示排除声优出演。
 type collabRoleFilter struct {
-	staff   [][2]int
+	staff    [][2]int
 	negStaff [][2]int
-	cv      bool
-	cvNeg   bool
+	cv       bool
+	cvNeg    bool
 }
 
-func (f collabRoleFilter) empty() bool { return len(f.staff) == 0 && len(f.negStaff) == 0 && !f.cv && !f.cvNeg }
+func (f collabRoleFilter) empty() bool {
+	return len(f.staff) == 0 && len(f.negStaff) == 0 && !f.cv && !f.cvNeg
+}
 
 // parseCollabRoles 解析逗号分隔的职位标签参数（如 "2:1,cv,-2:10"），非法项忽略。
 // 前缀 "-" 表示负标签（排除），如 "-2:1" 表示排除 type=2, position=1 的职位。
@@ -95,41 +97,24 @@ func staffConds(typeCol, posCol string, keys [][2]int) (string, []any) {
 	return strings.Join(conds, " OR "), args
 }
 
-// negStaffExists 生成负标签排除的 NOT EXISTS 子查询。
-// 检查 subject_persons 中是否存在匹配负标签的记录，存在则排除。
-// 如果 personID 为 nil，则使用外层查询的 sp.person_id 列（用于 attachCollabSubjects 等场景）。
-func negStaffExists(keys [][2]int, personID any) (string, []any) {
+// negStaffConds 生成负职位标签条件。负标签只排除命中的职位记录，
+// 不会因为同一人物在同一条目还有另一个被排除职位而把其余职位记录一并排除。
+func negStaffConds(typeCol, posCol string, keys [][2]int) (string, []any) {
 	if len(keys) == 0 {
 		return "", nil
 	}
 	conds := make([]string, 0, len(keys))
 	args := make([]any, 0, len(keys)*2)
 	for _, k := range keys {
-		conds = append(conds, "(sa_neg.type = ? AND sp_neg.position = ?)")
+		conds = append(conds, "("+typeCol+" = ? AND "+posCol+" = ?)")
 		args = append(args, k[0], k[1])
 	}
-	personCond := "sp_neg.person_id = ?"
-	if personID == nil {
-		// 使用外层查询的 sp.person_id 列
-		personCond = "sp_neg.person_id = sp.person_id"
-	}
-	subQuery := `NOT EXISTS (
-		SELECT 1 FROM subject_persons sp_neg 
-		CROSS JOIN subjects sa_neg ON sa_neg.id = sp_neg.subject_id 
-		WHERE sp_neg.subject_id = sp.subject_id 
-		AND ` + personCond + `
-		AND (` + strings.Join(conds, " OR ") + `)
-	)`
-	if personID == nil {
-		return subQuery, args
-	}
-	// person_id 参数放在最前面
-	return subQuery, append([]any{personID}, args...)
+	return "NOT (" + strings.Join(conds, " OR ") + ")", args
 }
 
 // buildCollabAppCTE 组装 app CTE（被搜索人物的出现条目集）。
 // fa 启用时仅保留其担任所选职位的条目；返回 CTE 文本与按序参数。
-// 负标签通过 NOT EXISTS 排除匹配的条目。
+// 负标签只排除命中的职位记录。
 func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 	if fa.empty() {
 		return collaborationAppCTE, []any{id, id}
@@ -155,9 +140,9 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 		}
 		// 如果没有正标签但有负标签，不添加条件（包含所有 staff）
 
-		// 添加负标签排除条件（NOT EXISTS）
+		// 负标签只排除命中的职位记录。
 		if hasNegStaff {
-			negCond, negArgs := negStaffExists(fa.negStaff, id)
+			negCond, negArgs := negStaffConds("sa.type", "sp.position", fa.negStaff)
 			if negCond != "" {
 				whereParts = append(whereParts, negCond)
 				whereArgs = append(whereArgs, negArgs...)
@@ -169,7 +154,7 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 			whereClause = strings.Join(whereParts, " AND ")
 		}
 
-		branch := `SELECT sp.subject_id FROM subject_persons sp
+		branch := `SELECT DISTINCT sp.subject_id FROM subject_persons sp
 			CROSS JOIN subjects sa ON sa.id = sp.subject_id
 			WHERE sp.person_id = ? AND ` + whereClause
 		args = append(args, id)
@@ -191,7 +176,7 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 
 // buildCollabPairsCTE 组装 pairs CTE（(合作人物, 共同条目) 对）。
 // fb 启用时仅保留合作人物担任所选职位的条目对；返回 CTE 文本与按序参数。
-// 负标签通过 NOT EXISTS 排除匹配的条目。
+// 负标签只排除命中的职位记录。
 //
 // CROSS JOIN 强制以 app（小结果集）为外层循环：`person_id <> ?` 这类
 // 非等值条件无法用作索引约束，普通 JOIN 下优化器可能误选对
@@ -222,9 +207,9 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 			condParts = append(condParts, "("+condStr+")")
 			condArgs = append(condArgs, cargs...)
 		}
-		// 添加负标签排除条件（NOT EXISTS）
+		// 负标签只排除命中的职位记录。
 		if hasNegStaff {
-			negCond, negArgs := negStaffExists(fb.negStaff, id)
+			negCond, negArgs := negStaffConds("sb.type", "sp.position", fb.negStaff)
 			if negCond != "" {
 				condParts = append(condParts, negCond)
 				condArgs = append(condArgs, negArgs...)
@@ -439,9 +424,9 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 			condParts = append(condParts, "("+condStr+")")
 			staffArgs = append(staffArgs, cargs...)
 		}
-		// 添加负标签排除条件（NOT EXISTS）
+		// 负标签只排除命中的职位记录。
 		if hasNegStaff {
-			negCond, negArgs := negStaffExists(fb.negStaff, nil) // nil 表示使用外层 sp.person_id
+			negCond, negArgs := negStaffConds("sb.type", "sp.position", fb.negStaff)
 			if negCond != "" {
 				condParts = append(condParts, negCond)
 				staffArgs = append(staffArgs, negArgs...)
