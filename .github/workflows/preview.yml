@@ -1,5 +1,8 @@
-# 预览环境流水线：push 到 main 自动构建 Docker 镜像并推送
-# 镜像标签：preview-<commit-sha 前 7 位>，用于部署预览环境
+# 预览环境流水线：push 到 main 自动构建多平台二进制 + Docker 镜像
+#   1. 构建前端 (web/dist)
+#   2. 交叉编译全平台二进制（版本号 preview）
+#   3. 构建多架构 Docker 镜像并推送至 ghcr.io
+#   4. 汇总产物并生成更新日志
 name: Preview
 
 on:
@@ -43,7 +46,81 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ---------- 2. Docker 镜像 → ghcr.io ----------
+  # ---------- 2. 全平台交叉编译 ----------
+  binaries:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: linux,   goarch: arm   }
+          - { goos: linux,   goarch: '386' }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: windows, goarch: '386' }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download web/dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          EXT=''
+          [ "${GOOS}" = 'windows' ] && EXT='.exe'
+          go build -trimpath -ldflags "-s -w -X main.version=preview" \
+            -o "bangumi-${GOOS}-${GOARCH}${EXT}" ./cmd/bangumi
+
+      - name: Package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          NAME="bangumi-preview-${SHORT_SHA}-${GOOS}-${GOARCH}"
+          EXT=''
+          [ "${GOOS}" = 'windows' ] && EXT='.exe'
+          mkdir -p "pkg/${NAME}"
+          cp "bangumi-${GOOS}-${GOARCH}${EXT}" README.md LICENSE "pkg/${NAME}/"
+          (
+            cd pkg
+            if [ "${GOOS}" = 'windows' ]; then
+              zip -q -r "${NAME}.zip" "${NAME}"
+            else
+              tar -czf "${NAME}.tar.gz" "${NAME}"
+            fi
+            rm -rf "${NAME}"
+          )
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: pkg/*
+          retention-days: 7
+          if-no-files-found: error
+
+  # ---------- 3. Docker 镜像 → ghcr.io ----------
   docker:
     name: Docker image (preview)
     needs: frontend
@@ -84,6 +161,69 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=preview-${{ github.sha }}
+            VERSION=preview
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ---------- 4. 汇总产物 + 更新日志 ----------
+  summary:
+    name: Upload summary
+    needs: [binaries, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download all packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate checksums
+        working-directory: dist
+        shell: bash
+        run: sha256sum * > checksums.txt
+
+      - name: Upload all packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: preview-artifacts
+          path: dist/*
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          # 获取上一次 preview 构建的 commit（如有）
+          PREV=$(git log --oneline --grep="ci:" --all --format="%H" | head -1 || echo "")
+          if [ -n "$PREV" ] && [ "$PREV" != "${{ github.sha }}" ]; then
+            LOG=$(git log --pretty=format:"- %s (%h)" "$PREV".."${{ github.sha }}" -- . ':!.github')
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" -10 -- . ':!.github')
+          fi
+          # 写入多行输出
+          {
+            echo "notes<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "## Preview Build \`${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Docker**: \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 更新日志" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.changelog.outputs.notes }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 二进制包" >> "$GITHUB_STEP_SUMMARY"
+          echo "见 [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
