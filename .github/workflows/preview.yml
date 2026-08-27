@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # 创建/更新 preview Release
   packages: write   # 推送 ghcr.io 镜像
 
 concurrency:
@@ -165,11 +165,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---------- 4. 汇总产物 + 更新日志 ----------
-  summary:
-    name: Upload summary
+  # ---------- 4. 更新 preview Release ----------
+  release:
+    name: Update preview release
     needs: [binaries, docker]
-    if: always()
+    if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -188,31 +188,60 @@ jobs:
         shell: bash
         run: sha256sum * > checksums.txt
 
-      - name: Upload all packages
-        uses: actions/upload-artifact@v7
-        with:
-          name: preview-artifacts
-          path: dist/*
-          retention-days: 30
-          if-no-files-found: error
+      - name: Delete old preview release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # 获取 preview tag 对应的 release ID（如有）
+          RELEASE_ID=$(gh release view preview --json id -q '.id' 2>/dev/null || echo "")
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Found existing preview release: $RELEASE_ID"
+            # 列出并删除所有旧资产
+            ASSETS=$(gh api "repos/${{ github.repository }}/releases/$RELEASE_ID/assets" --jq '.[].id' 2>/dev/null || echo "")
+            for ASSET_ID in $ASSETS; do
+              echo "Deleting asset $ASSET_ID"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$ASSET_ID" 2>/dev/null || true
+            done
+          else
+            echo "No existing preview release found"
+          fi
 
       - name: Generate changelog
         id: changelog
         shell: bash
         run: |
-          # 获取上一次 preview 构建的 commit（如有）
-          PREV=$(git log --oneline --grep="ci:" --all --format="%H" | head -1 || echo "")
-          if [ -n "$PREV" ] && [ "$PREV" != "${{ github.sha }}" ]; then
-            LOG=$(git log --pretty=format:"- %s (%h)" "$PREV".."${{ github.sha }}" -- . ':!.github')
+          SHORT_SHA="${GITHUB_SHA::7}"
+          # 获取上一个非 preview 的 tag 作为起始点
+          BASE_TAG=$(git tag --sort=-version:refname | grep -v '^preview' | head -1 || echo "")
+          if [ -n "$BASE_TAG" ]; then
+            LOG=$(git log --pretty=format:"- %s (%h)" "$BASE_TAG"..HEAD -- . ':!.github')
           else
-            LOG=$(git log --pretty=format:"- %s (%h)" -10 -- . ':!.github')
+            LOG=$(git log --pretty=format:"- %s (%h)" -20 -- . ':!.github')
           fi
           # 写入多行输出
           {
             echo "notes<<EOF"
+            echo "## 更新日志"
+            echo ""
+            echo "**构建**: \`${SHORT_SHA}\` | **Docker**: \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`"
+            echo ""
             echo "$LOG"
+            echo ""
+            echo "---"
+            echo "*此为持续预览版本，随 main 分支更新自动构建。*"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update preview release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: preview
+          name: "Preview Build"
+          body: ${{ steps.changelog.outputs.notes }}
+          prerelease: true
+          make_latest: false
+          files: dist/*
 
       - name: Summary
         shell: bash
@@ -220,10 +249,8 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           echo "## Preview Build \`${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Release**: [Preview Build](https://github.com/${{ github.repository }}/releases/tag/preview)" >> "$GITHUB_STEP_SUMMARY"
           echo "**Docker**: \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### 更新日志" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.changelog.outputs.notes }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### 二进制包" >> "$GITHUB_STEP_SUMMARY"
-          echo "见 [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
