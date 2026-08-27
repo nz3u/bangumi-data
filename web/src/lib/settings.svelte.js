@@ -29,11 +29,20 @@ function load() {
   return {}
 }
 
+// 条目页高亮区域预设
+export const HIGHLIGHT_AREA_PRESETS = [
+  { value: 'title', label: '标题' },
+  { value: 'tags', label: '标签' }
+]
+
+export const DEFAULT_HIGHLIGHT_AREAS = ['tags']
+
 export const settings = $state({
   externalHost: DEFAULT_EXTERNAL_HOST, // 'bgm.tv' | 'bangumi.tv' | 'chii.in' | 'custom'
   externalHostCustom: '', // 自定义主机名
   picHost: DEFAULT_PIC_HOST, // 'lain.bgm.tv' | 'custom'
   picHostCustom: '',
+  highlightAreas: [...DEFAULT_HIGHLIGHT_AREAS], // 高亮区域：['title', 'tags'] 的子集
   ...load()
 })
 
@@ -46,12 +55,18 @@ export function saveSettings() {
         externalHost: settings.externalHost,
         externalHostCustom: settings.externalHostCustom,
         picHost: settings.picHost,
-        picHostCustom: settings.picHostCustom
+        picHostCustom: settings.picHostCustom,
+        highlightAreas: settings.highlightAreas
       })
     )
   } catch {
     /* 隐私模式等场景下写入失败不影响使用 */
   }
+}
+
+// 检查指定高亮区域是否启用
+export function isHighlightEnabled(area) {
+  return Array.isArray(settings.highlightAreas) && settings.highlightAreas.includes(area)
 }
 
 // sanitizeHost 净化自定义输入：去协议/路径/端口，仅保留合法主机名；非法返回空串
