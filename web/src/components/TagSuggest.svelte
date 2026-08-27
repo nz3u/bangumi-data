@@ -18,7 +18,8 @@
     text = $bindable(''),
     onfocus = () => {},
     onblur = () => {},
-    oninput = () => {}
+    oninput = () => {},
+    pageTags = []
   } = $props()
 
   const LIMIT = 12
@@ -68,16 +69,29 @@
     return name.toLowerCase().includes(s) || !!PinyinMatch.match(name, s)
   }
 
+  // 构建当前页面标签名称集合（用于优先展示）
+  const pageTagSet = $derived(new Set(pageTags.map((t) => t.name)))
+
   const items = $derived.by(() => {
     if (!pool) return []
     const q = query
     const filtered = pool.filter((t) => hit(t.name, q))
-    if (!q) return filtered.slice(0, LIMIT)
+    if (!q) {
+      // 无输入时：页面标签在前，其余在后
+      const page = filtered.filter((t) => pageTagSet.has(t.name))
+      const rest = filtered.filter((t) => !pageTagSet.has(t.name))
+      return [...page, ...rest].slice(0, LIMIT)
+    }
     const k = q.toLowerCase()
-    // 前缀命中优先于子串/拼音命中（稳定排序保持次数降序）
-    return filtered
-      .map((t) => ({ t, pre: t.name.toLowerCase().startsWith(k) ? 0 : 1 }))
-      .sort((a, b) => a.pre - b.pre)
+    // 按相关性排序：前缀 > 子串/拼音
+    const scored = filtered.map((t) => ({
+      t,
+      pre: t.name.toLowerCase().startsWith(k) ? 0 : 1,
+      onPage: pageTagSet.has(t.name) ? 0 : 1
+    }))
+    // 页面标签优先，再按相关性排序（稳定排序保持次数降序）
+    return scored
+      .sort((a, b) => a.onPage - b.onPage || a.pre - b.pre)
       .slice(0, LIMIT)
       .map((x) => x.t)
   })

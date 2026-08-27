@@ -186,6 +186,28 @@
     return set
   })
 
+  // 当前页面结果中的所有标签（用于标签搜索建议优先展示）
+  const pageTags = $derived.by(() => {
+    if (!result?.items) return []
+    const tagMap = new Map()
+    for (const it of result.items) {
+      // 普通标签
+      for (const t of it.tags ?? []) {
+        if (!tagMap.has(t.name)) {
+          tagMap.set(t.name, { name: t.name, cnt: t.count ?? 0 })
+        }
+      }
+      // 元标签
+      for (const name of it.meta_tags ?? []) {
+        if (!tagMap.has(name)) {
+          const tag = (it.tags ?? []).find((t) => t.name === name)
+          tagMap.set(name, { name, cnt: tag?.count ?? 0 })
+        }
+      }
+    }
+    return Array.from(tagMap.values())
+  })
+
   // 正标签高亮样式（与关键词着重号一致的黄色下划线）
   const POS_MARK =
     'border-2 border-solid border-yellow-400 rounded px-1 py-0'
@@ -224,6 +246,7 @@
           kind="all"
           placeholder="如：+奇幻,-科幻 或 小说"
           bind:text={f.tag}
+          {pageTags}
           onfocus={() => (tagBoxFocus = true)}
           onblur={() => (tagBoxFocus = false)}
           oninput={() => (lastTagBoxChangeAt = Date.now())}
