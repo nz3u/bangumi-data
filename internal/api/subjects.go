@@ -83,10 +83,11 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		conds = append(conds, "s.date <= ?")
 		args = append(args, v)
 	}
+	// 合并 tag 与 meta_tag 搜索：单个 tag 参数同时匹配两张倒排映射表（OR 语义），
+	// 保持 meta_tag 参数向后兼容（单独使用时仅查元标签表）。
 	if v := parseTagCombo(c.Query("tag")); len(v.pos) > 0 || len(v.neg) > 0 {
-		conds, args = appendTagFilters(conds, args, "subject_tags_map", v.pos, v.neg)
-	}
-	if v := parseTagCombo(c.Query("meta_tag")); len(v.pos) > 0 || len(v.neg) > 0 {
+		conds, args = appendCombinedTagFilters(conds, args, v.pos, v.neg)
+	} else if v := parseTagCombo(c.Query("meta_tag")); len(v.pos) > 0 || len(v.neg) > 0 {
 		conds, args = appendTagFilters(conds, args, "subject_meta_tags_map", v.pos, v.neg)
 	}
 
@@ -201,15 +202,27 @@ func appendTagFilters(conds []string, args []any, mapTable string, pos, neg []st
 	return conds, args
 }
 
+// appendCombinedTagFilters 同时在普通标签和元标签倒排映射表上过滤：
+// 正标签 s.id IN (tags_map UNION meta_tags_map)；负标签 s.id NOT IN (两者交集)。
+func appendCombinedTagFilters(conds []string, args []any, pos, neg []string) ([]string, []any) {
+	for _, t := range pos {
+		conds = append(conds, "s.id IN (SELECT subject_id FROM subject_tags_map WHERE tag_name = ? UNION SELECT subject_id FROM subject_meta_tags_map WHERE tag_name = ?)")
+		args = append(args, t, t)
+	}
+	for _, t := range neg {
+		conds = append(conds, "s.id NOT IN (SELECT subject_id FROM subject_tags_map WHERE tag_name = ? UNION SELECT subject_id FROM subject_meta_tags_map WHERE tag_name = ?)")
+		args = append(args, t, t)
+	}
+	return conds, args
+}
+
 // suggestSubjectTags 标签/元标签实时建议。
-// kind=tag（普通标签）|meta（元标签）；q 可选子串过滤（ASCII 大小写不敏感）；
+// kind=tag（普通标签）|meta（元标签）|all（合并，不区分）；q 可选子串过滤（ASCII 大小写不敏感）；
 // limit 默认 50、上限 5000（前端一次性拉取候选池后做拼音首字母本地过滤）。
 // 返回按使用次数降序的 {name, cnt} 列表，前缀命中优先于子串命中。
+// kind=all 时合并两张聚合表并按名称去重（取较大计数）。
 func (h *handler) suggestSubjectTags(c *gin.Context) {
-	table := "subject_tags_agg"
-	if c.Query("kind") == "meta" {
-		table = "subject_meta_tags_agg"
-	}
+	kind := c.Query("kind")
 
 	limit := 50
 	if v, ok := parseIntQuery(c, "limit"); ok && v > 0 {
@@ -220,15 +233,41 @@ func (h *handler) suggestSubjectTags(c *gin.Context) {
 	}
 
 	q := strings.TrimSpace(c.Query("q"))
-	where, args := "", []any{}
-	if q != "" {
-		where = " WHERE name LIKE ? ESCAPE '\\'"
-		args = append(args, "%"+escapeLike(q)+"%")
+	prefix := escapeLike(q) + "%"
+	likeArg := "%" + escapeLike(q) + "%"
+
+	var subQuery string
+	switch kind {
+	case "meta":
+		subQuery = "SELECT name, cnt FROM subject_meta_tags_agg"
+	case "all":
+		subQuery = "SELECT name, cnt FROM subject_tags_agg UNION ALL SELECT name, cnt FROM subject_meta_tags_agg"
+	default: // "tag" 或空
+		subQuery = "SELECT name, cnt FROM subject_tags_agg"
 	}
 
-	rows, err := h.db.Query(`SELECT name, cnt FROM `+table+where+
-		` ORDER BY (name LIKE ?) DESC, cnt DESC, name LIMIT ?`,
-		append(args, escapeLike(q)+"%", limit)...)
+	var where string
+	var args []any
+	if q != "" {
+		where = " WHERE name LIKE ? ESCAPE '\\'"
+		args = append(args, likeArg)
+	}
+
+	// kind=all 时按名称去重，取较大计数
+	selectExpr := "SELECT name, MAX(cnt) AS cnt"
+	if kind != "all" {
+		selectExpr = "SELECT name, cnt"
+	}
+	groupBy := ""
+	if kind == "all" {
+		groupBy = " GROUP BY name"
+	}
+
+	orderBy := " ORDER BY (name LIKE ?) DESC, cnt DESC, name LIMIT ?"
+	sql := selectExpr + " FROM (" + subQuery + ") t" + where + groupBy + orderBy
+	args = append(args, prefix, limit)
+
+	rows, err := h.db.Query(sql, args...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return

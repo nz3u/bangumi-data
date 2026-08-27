@@ -47,7 +47,6 @@ export function buildSubjectQuery(f) {
     type: f.type,
     platform: f.platform,
     tag: f.tag,
-    meta_tag: f.metaTag,
     rank_min: f.rankMin,
     score_min: f.scoreMin,
     date_from: f.dateFrom,
@@ -66,9 +65,9 @@ export function searchSubjects(filters) {
 }
 
 // 标签/元标签候选池（条目搜索的实时建议数据源）。
-// kind: 'tag'（普通标签）| 'meta'（元标签）；按使用次数降序，最多 5000 条。
+// kind: 'tag'（普通标签）| 'meta'（元标签）| 'all'（合并不区分）；按使用次数降序，最多 5000 条。
 // 前端一次拉取后本地做子串 + 拼音首字母过滤（见 components/TagSuggest.svelte），
-// 模块级缓存避免两个标签框重复请求。
+// 模块级缓存避免重复请求。
 const tagPoolCache = new Map()
 export function loadTagPool(kind) {
   if (!tagPoolCache.has(kind)) {
