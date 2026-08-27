@@ -216,7 +216,7 @@ func load(dir string) (*Constants, error) {
 	}
 
 	c := &Constants{
-		SubjectTypes:     map[int]string{1: "漫画", 2: "动画", 3: "音乐", 4: "游戏", 6: "三次元"},
+		SubjectTypes:     map[int]string{1: "书籍", 2: "动画", 3: "音乐", 4: "游戏", 6: "三次元"},
 		Platforms:        map[int]map[int]Platform{},
 		SubjectRelations: map[int]map[int]Relation{},
 		Staffs:           map[int]map[int]Staff{},
@@ -321,7 +321,7 @@ func (c *Constants) SubjectTypeCN(t int) string {
 	return fmt.Sprintf("类型%d", t)
 }
 
-// PlatformCN 平台中文名。
+// PlatformCN 子类型中文名。
 func (c *Constants) PlatformCN(subjectType, platform int) string {
 	if m, ok := c.Platforms[subjectType]; ok {
 		if p, ok := m[platform]; ok && p.TypeCN != "" {
@@ -331,7 +331,7 @@ func (c *Constants) PlatformCN(subjectType, platform int) string {
 	if platform == 0 {
 		return "其他"
 	}
-	return fmt.Sprintf("平台%d", platform)
+	return fmt.Sprintf("子类型%d", platform)
 }
 
 // RelationCN 条目关联类型中文名。

@@ -3,11 +3,11 @@
   import { searchSubjects } from '../lib/api.js'
   import {
     loadConstants,
-    platformsFor,
     enumList,
     SUBJECT_AUTO_SEARCH_DEBOUNCE_MS,
     TAG_BOX_IDLE_SEARCH_MS
   } from '../lib/constants.js'
+  import { getPlatforms } from '../lib/platforms.js'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite, fmtCompact } from '../lib/format.js'
  import Pagination from '../components/Pagination.svelte'
  import Highlight from '../components/Highlight.svelte'
@@ -31,6 +31,7 @@
     size: 30
   }
   let cons = $state(null)
+  let allPlatforms = $state({})
   let types = $state([])
   let loading = $state(false)
   let error = $state('')
@@ -38,7 +39,13 @@
 
   let f = $state({ ...DEFAULTS })
 
-  const platforms = $derived(f.type ? platformsFor(cons, f.type) : [])
+  const platforms = $derived(
+    f.type
+      ? Object.values(allPlatforms[Number(f.type)] ?? {})
+          .map((p) => ({ id: p.id, name: p.type_cn }))
+          .sort((a, b) => a.id - b.id)
+      : []
+  )
 
   const sortOptions = [
     { value: 'id', label: 'ID' },
@@ -59,7 +66,9 @@
   ]
 
   onMount(async () => {
-    cons = await loadConstants()
+    const [consData, platformsData] = await Promise.all([loadConstants(), getPlatforms()])
+    cons = consData
+    allPlatforms = platformsData
     types = enumList(cons.subject_types)
     await doSearch({ ...f, page: 1 }) // 挂载即展示第 1 页（空条件 = 全量列表）
   })
@@ -200,7 +209,7 @@
         </select>
       </div>
       <div>
-        <label class="label" for="subject-platform">平台</label>
+        <label class="label" for="subject-platform">子类型</label>
         <select id="subject-platform" class="input" bind:value={f.platform} disabled={!f.type}>
           <option value="">全部</option>
           {#each platforms as p}
@@ -303,7 +312,7 @@
               <th>类型</th>
               <th>中文名</th>
               <th>原名</th>
-              <th>平台</th>
+              <th>子类型</th>
               <th>日期</th>
               <th>评分</th>
               <th>排名</th>
