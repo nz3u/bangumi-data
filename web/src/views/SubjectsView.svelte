@@ -20,7 +20,6 @@
     type: '',
     platform: '',
     tag: '',
-    metaTag: '',
     rankMin: '',
     scoreMin: '',
     dateFrom: '',
@@ -72,7 +71,7 @@
 
   // 标签框激活状态与最近变动时间：激活期间自动搜索需等待标签内容静默，
   // 避免选词（含拼音首字母检索）过程中频繁触发搜索。
-  let tagBoxFocus = $state({ tag: false, metaTag: false })
+  let tagBoxFocus = $state(false)
   let lastTagBoxChangeAt = $state(0)
 
   // 自动搜索：表单相对最近一次已执行搜索的快照有任何变更时，停顿
@@ -84,7 +83,7 @@
     if (sig === appliedFormSig) return
     clearTimeout(autoTimer)
     let delay = SUBJECT_AUTO_SEARCH_DEBOUNCE_MS
-    if (tagBoxFocus.tag || tagBoxFocus.metaTag) {
+    if (tagBoxFocus) {
       delay = Math.max(delay, TAG_BOX_IDLE_SEARCH_MS - (Date.now() - lastTagBoxChangeAt))
     }
     autoTimer = setTimeout(() => {
@@ -135,11 +134,17 @@
   let allTagsExpanded = $state(false) // 全局展开状态
   let tagExpandOverrides = $state({}) // 单行覆盖：subject_id -> 是否展开
 
-  // 合并元标签与普通标签：元标签在前
+  // 合并元标签与普通标签：元标签在前；同名标签去重（显示元标签样式，附使用次数）
   function rowTags(it) {
-    const metas = (it.meta_tags ?? []).map((name) => ({ name, cnt: 0, meta: true }))
-    const tags = (it.tags ?? []).map((t) => ({ name: t.name, cnt: t.count ?? 0, meta: false }))
-    return [...metas, ...tags]
+    const metaSet = new Set(it.meta_tags ?? [])
+    const metaList = (it.meta_tags ?? []).map((name) => {
+      const tag = (it.tags ?? []).find((t) => t.name === name)
+      return { name, cnt: tag?.count ?? 0, meta: true }
+    })
+    const tagList = (it.tags ?? [])
+      .filter((t) => !metaSet.has(t.name))
+      .map((t) => ({ name: t.name, cnt: t.count ?? 0, meta: false }))
+    return [...metaList, ...tagList]
   }
 
   // 当前行实际渲染的标签（收拢时截取前 TAGS_PREVIEW_N 个）
@@ -203,27 +208,15 @@
           {/each}
         </select>
       </div>
-      <div>
-        <label class="label" for="subject-tag">标签（+必须包含 / -必须排除，逗号分隔）</label>
+      <div class="col-span-2">
+        <label class="label" for="subject-tag">标签（+必须包含 / -必须排除，逗号分隔，普通标签与元标签统一检索）</label>
         <TagSuggest
           inputId="subject-tag"
-          kind="tag"
-          placeholder="如：+奇幻,-科幻"
+          kind="all"
+          placeholder="如：+奇幻,-科幻 或 小说"
           bind:text={f.tag}
-          onfocus={() => (tagBoxFocus.tag = true)}
-          onblur={() => (tagBoxFocus.tag = false)}
-          oninput={() => (lastTagBoxChangeAt = Date.now())}
-        />
-      </div>
-      <div>
-        <label class="label" for="subject-metatag">元标签（同上语法，经验证的分类标签）</label>
-        <TagSuggest
-          inputId="subject-metatag"
-          kind="meta"
-          placeholder="如：小说"
-          bind:text={f.metaTag}
-          onfocus={() => (tagBoxFocus.metaTag = true)}
-          onblur={() => (tagBoxFocus.metaTag = false)}
+          onfocus={() => (tagBoxFocus = true)}
+          onblur={() => (tagBoxFocus = false)}
           oninput={() => (lastTagBoxChangeAt = Date.now())}
         />
       </div>
@@ -339,7 +332,7 @@
                   <div class="flex flex-wrap items-center gap-1">
                     {#each rowTagsShown(it) as t (`${t.meta ? 'm' : 't'}:${t.name}`)}
                       <span class="{t.meta ? 'chip-meta' : 'chip'} {positiveTagSet.has(t.name) ? POS_MARK : ''}">
-                        {t.name}{#if !t.meta && t.cnt > 0}<small class="ml-0.5 text-neutral-400 dark:text-neutral-500" title="{t.name} 被引用 {t.cnt} 次">{fmtCompact(t.cnt)}</small>{/if}
+                        {t.name}{#if t.cnt > 0}<small class="ml-0.5 text-neutral-400 dark:text-neutral-500" title="{t.name} 被引用 {t.cnt} 次">{fmtCompact(t.cnt)}</small>{/if}
                       </span>
                     {/each}
                     {#if rowTags(it).length > TAGS_PREVIEW_N || rowTagsExpanded(it.id)}
