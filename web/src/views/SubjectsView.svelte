@@ -174,7 +174,7 @@
 
   // 正标签高亮样式（与关键词着重号一致的黄色下划线）
   const POS_MARK =
-    'underline decoration-2 underline-offset-2 decoration-yellow-500 dark:decoration-yellow-400'
+    'border-2 border-solid border-yellow-400 rounded px-1 py-0'
 </script>
 
 <div class="grid gap-4">
