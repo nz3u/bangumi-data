@@ -243,6 +243,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 		fail(c, 500, err.Error())
 		return
 	}
+	defer rows.Close()
 
 	items := []*collabItem{}
 	var total int64
@@ -259,7 +260,6 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 		it.Subjects = []*collabSubject{}
 		items = append(items, &it)
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
 		fail(c, 500, err.Error())
 		return
