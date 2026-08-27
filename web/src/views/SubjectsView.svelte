@@ -348,7 +348,7 @@
                         {t.name}{#if t.cnt > 0}<small class="ml-0.5 text-neutral-400 dark:text-neutral-500" title="{t.name} 被引用 {t.cnt} 次">{fmtCompact(t.cnt)}</small>{/if}
                       </span>
                     {/each}
-                    {#if rowTags(it).length > TAGS_PREVIEW_N || rowTagsExpanded(it.id)}
+                    {#if rowTags(it).length > TAGS_PREVIEW_N}
                       <button
                         type="button"
                         class="btn-mini"
