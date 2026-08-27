@@ -9,5 +9,5 @@ dump-*.zip
 web/node_modules/
 bangumi
 bangumi.exe
-dist/
+/dist/
 *.test
