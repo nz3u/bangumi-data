@@ -282,7 +282,11 @@ func FinalizeSchema(conn *sql.DB) error {
 
 // EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。
 // 已存在时为空操作，仅首次升级需一次性构建开销。
+// 先补建裸表：全新数据库（尚未 import）时索引语句会因缺表而报错。
 func EnsureIndexes(conn *sql.DB) error {
+	if err := ExecMulti(conn, schemaSQL); err != nil {
+		return err
+	}
 	return ExecMulti(conn, ensureSQL)
 }
 
