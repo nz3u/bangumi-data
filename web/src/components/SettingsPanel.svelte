@@ -8,6 +8,7 @@
     saveSettings,
     EXTERNAL_HOST_PRESETS,
     PIC_HOST_PRESETS,
+    HIGHLIGHT_AREA_PRESETS,
     sanitizeHost,
     externalHost,
     picHost
@@ -27,6 +28,18 @@
 
   function toggle() {
     open = !open
+  }
+
+  function toggleHighlightArea(area) {
+    const areas = Array.isArray(settings.highlightAreas) ? [...settings.highlightAreas] : []
+    const idx = areas.indexOf(area)
+    if (idx >= 0) {
+      areas.splice(idx, 1)
+    } else {
+      areas.push(area)
+    }
+    settings.highlightAreas = areas
+    saveSettings()
   }
 
   onMount(() => {
@@ -131,6 +144,25 @@
         人物头像 / 条目封面 / 角色头像将拼接自
         <span class="font-medium text-neutral-500 dark:text-neutral-300">{picNow}</span>；
         配置实时保存在浏览器本地。
+      </p>
+
+      <!-- 高亮区域 -->
+      <span class="label mt-4">条目页高亮区域</span>
+      <div class="flex flex-wrap gap-3">
+        {#each HIGHLIGHT_AREA_PRESETS as area}
+          <label class="flex items-center gap-1.5 text-sm">
+            <input
+              type="checkbox"
+              class="size-3.5 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600"
+              checked={settings.highlightAreas?.includes(area.value)}
+              onchange={() => toggleHighlightArea(area.value)}
+            />
+            {area.label}
+          </label>
+        {/each}
+      </div>
+      <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
+        选择搜索结果中需要高亮的区域；配置实时保存在浏览器本地。
       </p>
     </div>
   {/if}
