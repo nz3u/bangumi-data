@@ -72,10 +72,18 @@
   // 构建当前页面标签名称集合（用于优先展示）
   const pageTagSet = $derived(new Set(pageTags.map((t) => t.name)))
 
+  // 合并页面标签与 API 标签池：页面标签不在池中时补充进去，保证优先排序生效
+  const mergedPool = $derived.by(() => {
+    if (!pool) return pageTags
+    if (pageTags.length === 0) return pool
+    const names = new Set(pool.map((t) => t.name))
+    const extra = pageTags.filter((t) => !names.has(t.name))
+    return extra.length > 0 ? [...extra, ...pool] : pool
+  })
+
   const items = $derived.by(() => {
-    if (!pool) return []
+    const filtered = mergedPool.filter((t) => hit(t.name, query))
     const q = query
-    const filtered = pool.filter((t) => hit(t.name, q))
     if (!q) {
       // 无输入时：页面标签在前，其余在后
       const page = filtered.filter((t) => pageTagSet.has(t.name))
