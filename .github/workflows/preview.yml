@@ -188,24 +188,13 @@ jobs:
         shell: bash
         run: sha256sum * > checksums.txt
 
-      - name: Delete old preview release assets
+      - name: Delete old preview release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 获取 preview tag 对应的 release ID（如有）
-          RELEASE_ID=$(gh release view preview --json id -q '.id' 2>/dev/null || echo "")
-          if [ -n "$RELEASE_ID" ]; then
-            echo "Found existing preview release: $RELEASE_ID"
-            # 列出并删除所有旧资产
-            ASSETS=$(gh api "repos/${{ github.repository }}/releases/$RELEASE_ID/assets" --jq '.[].id' 2>/dev/null || echo "")
-            for ASSET_ID in $ASSETS; do
-              echo "Deleting asset $ASSET_ID"
-              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$ASSET_ID" 2>/dev/null || true
-            done
-          else
-            echo "No existing preview release found"
-          fi
+          echo "Deleting existing preview release (if any)..."
+          gh release delete preview --yes --cleanup-tag 2>/dev/null || echo "No existing preview release found"
 
       - name: Generate changelog
         id: changelog
