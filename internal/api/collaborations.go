@@ -292,6 +292,7 @@ type collabItem struct {
 // 合作人物按共同条目数降序（倒序）分页返回，条目按日期降序（倒序）。
 // 棋盘筛选参数：positions_a（当前人物职位标签）、positions_b（合作人物职位标签），
 // 逗号分隔多选，key 形如 "2:1" 或 "cv"，两组之间取交集。
+// type：合作人物类型筛选，1=个人、2=公司（组织），缺省/其他值表示全部。
 func (h *handler) getPersonCollaboration(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -301,6 +302,10 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	page, size := pagination(c)
 	fa := parseCollabRoles(c.Query("positions_a"))
 	fb := parseCollabRoles(c.Query("positions_b"))
+	typeFilter := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(c.Query("type"))); err == nil && (v == 1 || v == 2) {
+		typeFilter = v
+	}
 
 	var (
 		p      model.Person
@@ -342,13 +347,22 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	// agg 内 COUNT(*) OVER() 在分组后统计总组数（合作人物总数）。
 	appSQL, appArgs := buildCollabAppCTE(id, fa)
 	pairsSQL, pairsArgs := buildCollabPairsCTE(id, fb)
+	// 类型筛选直接作用于聚合：JOIN persons 过滤后在分组前生效，
+	// 保证 COUNT(*) OVER() 统计出的 total 与过滤后的合作人物总数一致。
+	aggJoin := ""
+	if typeFilter != 0 {
+		aggJoin = " JOIN persons pt ON pt.id = other AND pt.type = ?"
+	}
 	args := append(append([]any{}, appArgs...), pairsArgs...)
+	if typeFilter != 0 {
+		args = append(args, typeFilter)
+	}
 	args = append(args, size, (page-1)*size)
 	rows, err := h.db.Query(`WITH `+appSQL+`,
 `+pairsSQL+`,
 		agg AS (
 			SELECT other, COUNT(*) AS cnt, COUNT(*) OVER() AS total
-			FROM pairs GROUP BY other
+			FROM pairs`+aggJoin+` GROUP BY other
 		)
 		SELECT a.other, p.name, p.type, p.career, p.summary, a.cnt, a.total
 		FROM (SELECT * FROM agg ORDER BY cnt DESC, other ASC LIMIT ? OFFSET ?) a
