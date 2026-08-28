@@ -125,9 +125,10 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 	// 判断是否需要添加 staff 分支
 	hasPosStaff := len(fa.staff) > 0
 	hasNegStaff := len(fa.negStaff) > 0
-	hasAnyFilter := hasPosStaff || hasNegStaff || fa.cv || fa.cvNeg
-
-	if hasAnyFilter {
+	// 有正标签时，只保留相应参与方式；仅有负标签时，未命中的参与方式仍保留。
+	hasPositive := hasPosStaff || fa.cv
+	includeStaff := hasPosStaff || !hasPositive
+	if includeStaff {
 		// 构建 staff 分支的 WHERE 条件
 		var whereParts []string
 		var whereArgs []any
@@ -162,8 +163,9 @@ func buildCollabAppCTE(id int64, fa collabRoleFilter) (string, []any) {
 		branches = append(branches, branch)
 	}
 
-	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除
-	if fa.cv || fa.cvNeg {
+	// CV 分支：正标签只保留 CV；负标签只排除 CV，其他职位仍由 staff 分支保留。
+	includeCV := !fa.cvNeg && (fa.cv || !hasPositive)
+	if includeCV {
 		branches = append(branches, `SELECT pc.subject_id FROM person_characters pc WHERE pc.person_id = ?`)
 		args = append(args, id)
 	}
@@ -194,11 +196,14 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 
 	hasPosStaff := len(fb.staff) > 0
 	hasNegStaff := len(fb.negStaff) > 0
+	hasPositive := hasPosStaff || fb.cv
+	includeStaff := hasPosStaff || !hasPositive
 	joinSubjects := ""
-	cond := "1=1"
+	cond := "1=0"
 	var condArgs []any
 
-	if hasPosStaff || hasNegStaff {
+	if includeStaff && (hasPosStaff || hasNegStaff) {
+		cond = "1=1"
 		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
 		// 构建 staff 分支的 WHERE 条件
 		var condParts []string
@@ -218,19 +223,14 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 		if len(condParts) > 0 {
 			cond = strings.Join(condParts, " AND ")
 		}
+	} else if includeStaff {
+		cond = "1=1"
 	}
 
-	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除（WHERE 1=0）
-	cvCond := "1=1"
-	if fb.cv && !fb.cvNeg {
-		cvCond = "1=1" // 包含 CV
-	} else if fb.cvNeg {
-		cvCond = "1=0" // 排除 CV
-	} else if !fb.cv && !fb.cvNeg && !hasPosStaff && !hasNegStaff {
-		cvCond = "1=1" // 无任何筛选时包含 CV
-	} else {
-		// 有 staff 筛选但无 CV 筛选：不包含 CV（只看 staff）
-		cvCond = "1=0"
+	// 有正标签时只保留匹配的参与方式；负 CV 标签仅排除 CV 行。
+	cvCond := "1=0"
+	if !fb.cvNeg && (fb.cv || !hasPositive) {
+		cvCond = "1=1"
 	}
 
 	sql := `pairs AS (
@@ -414,8 +414,12 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	joinSubjects, staffCond, staffArgs := "", "1=1", []any{}
 	hasPosStaff := len(fb.staff) > 0
 	hasNegStaff := len(fb.negStaff) > 0
+	hasPositive := hasPosStaff || fb.cv
+	includeStaff := hasPosStaff || !hasPositive
 
-	if hasPosStaff || hasNegStaff {
+	if !includeStaff {
+		staffCond = "1=0"
+	} else if hasPosStaff || hasNegStaff {
 		joinSubjects = ` JOIN subjects sb ON sb.id = sp.subject_id`
 		// 构建 staff 分支的 WHERE 条件
 		var condParts []string
@@ -437,17 +441,10 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 		}
 	}
 
-	// CV 分支：cv 为正标签时包含，cvNeg 为负标签时排除
-	cvCond := "1=1"
-	if fb.cv && !fb.cvNeg {
-		cvCond = "1=1" // 包含 CV
-	} else if fb.cvNeg {
-		cvCond = "1=0" // 排除 CV
-	} else if !fb.cv && !fb.cvNeg && !hasPosStaff && !hasNegStaff {
-		cvCond = "1=1" // 无任何筛选时包含 CV
-	} else {
-		// 有 staff 筛选但无 CV 筛选：不包含 CV（只看 staff）
-		cvCond = "1=0"
+	// 有正标签时只保留匹配的参与方式；负 CV 标签仅排除 CV 行。
+	cvCond := "1=0"
+	if !fb.cvNeg && (fb.cv || !hasPositive) {
+		cvCond = "1=1"
 	}
 
 	// 参数按 SQL 文本中占位符出现顺序排列：

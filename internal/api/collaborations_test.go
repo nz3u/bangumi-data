@@ -64,3 +64,44 @@ func TestParseCollabRolesMultipleNegativeKeys(t *testing.T) {
 		t.Errorf("parseCollabRoles() = %#v, want negative keys %#v only", got, want)
 	}
 }
+
+func TestCollaborationCurrentPersonCVFilterOnlyIncludesCVSubjects(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range []string{
+		`CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER NOT NULL)`,
+		`CREATE TABLE subject_persons (subject_id INTEGER NOT NULL, person_id INTEGER NOT NULL, position INTEGER NOT NULL)`,
+		`CREATE TABLE person_characters (subject_id INTEGER NOT NULL, person_id INTEGER NOT NULL)`,
+		`INSERT INTO subjects VALUES (101, 2), (102, 2), (103, 2)`,
+		`INSERT INTO subject_persons VALUES (101, 1, 1), (103, 1, 1)`,
+		`INSERT INTO person_characters VALUES (102, 1), (103, 1)`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	appSQL, args := buildCollabAppCTE(1, collabRoleFilter{cv: true})
+	rows, err := db.Query(`WITH `+appSQL+` SELECT subject_id FROM app ORDER BY subject_id`, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []int64
+	for rows.Next() {
+		var subjectID int64
+		if err := rows.Scan(&subjectID); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, subjectID)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if want := []int64{102, 103}; !reflect.DeepEqual(got, want) {
+		t.Errorf("CV filter subjects = %v, want %v", got, want)
+	}
+}
