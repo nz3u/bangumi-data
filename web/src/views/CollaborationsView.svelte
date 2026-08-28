@@ -30,6 +30,22 @@
   let negSelA = $state([]) // 左侧：当前人物职位（多选 key，负标签）
   let negSelB = $state([]) // 上侧：合作人物职位（多选 key，负标签）
 
+  // ---- 人物类型筛选（合作人物）：全部 / 个人 / 公司 ----
+  // 服务端筛选（type=1 个人、type=2 公司），改变时重新请求第 1 页。
+  // 选择保存在浏览器本地，下次访问仍生效；默认筛选「个人」。
+  const PERSON_TYPE_KEY = 'collab-person-type'
+  const PERSON_TYPE_DEFAULT = 1
+  function loadPersonType() {
+    const v = Number(localStorage.getItem(PERSON_TYPE_KEY))
+    return [0, 1, 2].includes(v) ? v : PERSON_TYPE_DEFAULT
+  }
+  let personType = $state(loadPersonType())
+
+  function changePersonType() {
+    localStorage.setItem(PERSON_TYPE_KEY, String(personType))
+    if (currentPid && !loading) load(currentPid, 1)
+  }
+
   // ---- 前端快速搜索 ----
   let filter = $state('')
 
@@ -50,7 +66,7 @@
     const negativeKeys = (keys) => keys.flatMap((key) => key.split(',').map((part) => '-' + part))
     const posA = selA.concat(negativeKeys(negSelA)).join(',')
     const posB = selB.concat(negativeKeys(negSelB)).join(',')
-    return { page: p, size, positions_a: posA, positions_b: posB }
+    return { page: p, size, positions_a: posA, positions_b: posB, ...(personType ? { type: personType } : {}) }
   }
 
   let reqSeq = 0 // 连续点击标签时的过期响应保护
@@ -574,6 +590,17 @@
               title="支持中文或拼音首字母，如 dy→导演"
               bind:value={filter}
             />
+            <select
+              class="input w-auto"
+              aria-label="按人物类型筛选合作人物"
+              title="按人物类型筛选合作人物"
+              bind:value={personType}
+              onchange={changePersonType}
+            >
+              <option value={0}>全部</option>
+              <option value={1}>个人</option>
+              <option value={2}>公司</option>
+            </select>
             {#if filter.trim()}
               <button class="btn-mini" type="button" onclick={() => (filter = '')}>清除</button>
             {/if}
