@@ -12,7 +12,9 @@
     sanitizeHost,
     externalHost,
     picHost,
-    isSearchHighlight
+    isSearchHighlight,
+    HIGHLIGHT_COLOR_PRESETS,
+    highlightHex
   } from '../lib/settings.svelte.js'
 
   let open = $state(false)
@@ -191,6 +193,46 @@
       </div>
       <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
         人物检索推荐、人物/角色搜索结果中高亮命中关键词；配置实时保存在浏览器本地。
+      </p>
+
+      <!-- 高亮颜色：预设单选 + 自定义颜色，示例文字实时预览高亮效果 -->
+      <span class="label mt-4">高亮颜色</span>
+      <div class="flex flex-col gap-1.5" role="radiogroup" aria-label="高亮颜色">
+        {#each HIGHLIGHT_COLOR_PRESETS as p (p.value)}
+          <label class="flex min-w-0 items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="hl-color"
+              class="size-3.5 border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600"
+              value={p.value}
+              bind:group={settings.highlightColor}
+              onchange={saveSettings}
+            />
+            {#if p.value === 'custom'}
+              <span class="shrink-0">{p.label}</span>
+              <input
+                type="color"
+                class="h-6 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0.5 dark:border-neutral-600"
+                title="自定义高亮颜色"
+                bind:value={settings.highlightColorCustom}
+                oninput={saveSettings}
+              />
+              <mark
+                class="min-w-0 truncate text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) bg-(--hl) dark:bg-transparent dark:decoration-amber-100"
+                style:--hl={highlightHex()}
+              >高亮效果示例</mark>
+            {:else}
+              <mark
+                class="min-w-0 truncate text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) bg-(--hl) dark:bg-transparent dark:decoration-amber-100"
+                style:--hl={p.hex}
+              >高亮效果示例</mark>
+              <span class="shrink-0 text-[11px] text-neutral-400">{p.label}</span>
+            {/if}
+          </label>
+        {/each}
+      </div>
+      <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
+        浅色模式下背景与着重线同色；深色模式背景透明、仅保留着重线。配置实时保存在浏览器本地。
       </p>
     </div>
   {/if}
