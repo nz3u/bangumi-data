@@ -11,7 +11,8 @@
     HIGHLIGHT_AREA_PRESETS,
     sanitizeHost,
     externalHost,
-    picHost
+    picHost,
+    isSearchHighlight
   } from '../lib/settings.svelte.js'
 
   let open = $state(false)
@@ -25,6 +26,12 @@
   )
   const hostNow = $derived(externalHost())
   const picNow = $derived(picHost())
+  const searchHi = $derived(isSearchHighlight())
+
+  function toggleSearchHighlight() {
+    settings.searchHighlight = !isSearchHighlight()
+    saveSettings()
+  }
 
   function toggle() {
     open = !open
@@ -163,6 +170,27 @@
       </div>
       <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
         选择搜索结果中需要高亮的区域；配置实时保存在浏览器本地。
+      </p>
+
+      <!-- 搜索高亮开关（短滑块） -->
+      <div class="mt-4 flex items-center justify-between gap-2">
+        <span class="text-sm" id="search-hl-label">搜索建议高亮</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={searchHi}
+          aria-labelledby="search-hl-label"
+          title="搜索建议与搜索结果中高亮命中关键词"
+          class={`relative inline-flex h-4.5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${searchHi ? 'bg-sky-600' : 'bg-neutral-300 dark:bg-neutral-700'}`}
+          onclick={toggleSearchHighlight}
+        >
+          <span
+            class={`inline-block size-3.5 transform rounded-full bg-white shadow transition-transform duration-150 ${searchHi ? 'translate-x-[1.15rem]' : 'translate-x-0.5'}`}
+          ></span>
+        </button>
+      </div>
+      <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
+        人物检索推荐、人物/角色搜索结果中高亮命中关键词；配置实时保存在浏览器本地。
       </p>
     </div>
   {/if}

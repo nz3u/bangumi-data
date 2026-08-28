@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import { getPerson, searchPersons } from '../lib/api.js'
   import { goToTab } from '../lib/nav.js'
+  import { isSearchHighlight } from '../lib/settings.svelte.js'
   import Highlight from './Highlight.svelte'
 
   // 人物 ID 输入框（带搜索提示）：
@@ -233,7 +234,7 @@
             onclick={() => pick(p)}
             onmousemove={() => (active = i)}
           >
-            <span class="min-w-0 flex-1 truncate"><Highlight text={p.name} q={text} />{#if p.name_cn && p.name_cn !== p.name}（<Highlight text={p.name_cn} q={text} />）{/if}</span>
+            <span class="min-w-0 flex-1 truncate">{#if isSearchHighlight()}<Highlight text={p.name} q={text} />{:else}{p.name}{/if}{#if p.name_cn && p.name_cn !== p.name}（{#if isSearchHighlight()}<Highlight text={p.name_cn} q={text} />{:else}{p.name_cn}{/if}）{/if}</span>
             <small class="shrink-0 text-xs text-neutral-400">#{p.id}</small>
             <span class="chip shrink-0">{p.type_name}</span>
           </button>

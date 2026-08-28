@@ -7,7 +7,7 @@
 import Pagination from '../components/Pagination.svelte'
 import Highlight from '../components/Highlight.svelte'
 import { openDetail } from '../lib/detail.svelte.js'
-import { externalUrl } from '../lib/settings.svelte.js'
+import { externalUrl, isSearchHighlight } from '../lib/settings.svelte.js'
 
   const BASE = '/persons'
 
@@ -137,8 +137,8 @@ import { externalUrl } from '../lib/settings.svelte.js'
             {#each result.items as it (it.id)}
               <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail('person', it.id, it)}>
                 <td class="text-neutral-500"><a href={externalUrl('person', it.id)} target="_blank" rel="noreferrer" class="hover:underline" onclick={(e) => e.stopPropagation()}>{it.id}</a></td>
-                <td class="max-w-64 truncate"><a href={externalUrl('person', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}><Highlight text={it.name} q={f.q} /></a></td>
-                <td class="max-w-52 truncate"><Highlight text={it.name_cn} q={f.q} />{#if !it.name_cn}—{/if}</td>
+                <td class="max-w-64 truncate"><a href={externalUrl('person', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}>{#if isSearchHighlight()}<Highlight text={it.name} q={f.q} />{:else}{it.name}{/if}</a></td>
+                <td class="max-w-52 truncate">{#if isSearchHighlight()}<Highlight text={it.name_cn} q={f.q} />{:else}{it.name_cn}{/if}{#if !it.name_cn}—{/if}</td>
                 <td>{it.type_name}</td>
                 <td>
                   <div class="flex flex-wrap gap-1">
