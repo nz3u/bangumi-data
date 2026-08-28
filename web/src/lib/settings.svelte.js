@@ -43,6 +43,7 @@ export const settings = $state({
   picHost: DEFAULT_PIC_HOST, // 'lain.bgm.tv' | 'custom'
   picHostCustom: '',
   highlightAreas: [...DEFAULT_HIGHLIGHT_AREAS], // 高亮区域：['title', 'tags'] 的子集
+  searchHighlight: true, // 人物/角色搜索建议与结果的关键词高亮开关
   ...load()
 })
 
@@ -56,12 +57,18 @@ export function saveSettings() {
         externalHostCustom: settings.externalHostCustom,
         picHost: settings.picHost,
         picHostCustom: settings.picHostCustom,
-        highlightAreas: settings.highlightAreas
+        highlightAreas: settings.highlightAreas,
+        searchHighlight: settings.searchHighlight
       })
     )
   } catch {
     /* 隐私模式等场景下写入失败不影响使用 */
   }
+}
+
+// 搜索建议/结果是否高亮命中关键词（人物检索推荐、人物/角色搜索结果共用）
+export function isSearchHighlight() {
+  return settings.searchHighlight !== false
 }
 
 // 检查指定高亮区域是否启用
