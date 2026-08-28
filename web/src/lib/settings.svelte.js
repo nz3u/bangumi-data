@@ -37,6 +37,16 @@ export const HIGHLIGHT_AREA_PRESETS = [
 
 export const DEFAULT_HIGHLIGHT_AREAS = ['tags']
 
+// 关键词高亮颜色预设（浅色模式下的背景色/着重线颜色；深色模式固定琥珀线）
+export const HIGHLIGHT_COLOR_PRESETS = [
+  { value: 'slate-200', label: 'slate-200', hex: '#e2e8f0' },
+  { value: 'amber-100', label: 'amber-100', hex: '#fef3c7' },
+  { value: 'custom', label: '自定义…', hex: '' }
+]
+
+export const DEFAULT_HIGHLIGHT_COLOR = 'amber-100'
+export const DEFAULT_HIGHLIGHT_COLOR_CUSTOM = '#fff2b3'
+
 export const settings = $state({
   externalHost: DEFAULT_EXTERNAL_HOST, // 'bgm.tv' | 'bangumi.tv' | 'chii.in' | 'custom'
   externalHostCustom: '', // 自定义主机名
@@ -44,6 +54,8 @@ export const settings = $state({
   picHostCustom: '',
   highlightAreas: [...DEFAULT_HIGHLIGHT_AREAS], // 高亮区域：['title', 'tags'] 的子集
   searchHighlight: true, // 人物/角色搜索建议与结果的关键词高亮开关
+  highlightColor: DEFAULT_HIGHLIGHT_COLOR, // 'slate-200' | 'amber-100' | 'custom'
+  highlightColorCustom: DEFAULT_HIGHLIGHT_COLOR_CUSTOM, // 自定义颜色（#rrggbb）
   ...load()
 })
 
@@ -58,7 +70,9 @@ export function saveSettings() {
         picHost: settings.picHost,
         picHostCustom: settings.picHostCustom,
         highlightAreas: settings.highlightAreas,
-        searchHighlight: settings.searchHighlight
+        searchHighlight: settings.searchHighlight,
+        highlightColor: settings.highlightColor,
+        highlightColorCustom: settings.highlightColorCustom
       })
     )
   } catch {
@@ -69,6 +83,17 @@ export function saveSettings() {
 // 搜索建议/结果是否高亮命中关键词（人物检索推荐、人物/角色搜索结果共用）
 export function isSearchHighlight() {
   return settings.searchHighlight !== false
+}
+
+// 当前高亮颜色（#rrggbb）：预设直接取值；自定义非法时回退默认
+export function highlightHex() {
+  if (settings.highlightColor === 'slate-200') return '#e2e8f0'
+  if (settings.highlightColor === 'custom') {
+    return /^#[0-9a-fA-F]{6}$/.test(settings.highlightColorCustom ?? '')
+      ? settings.highlightColorCustom.toLowerCase()
+      : DEFAULT_HIGHLIGHT_COLOR_CUSTOM
+  }
+  return '#fef3c7' // amber-100（默认）
 }
 
 // 检查指定高亮区域是否启用
