@@ -3,7 +3,7 @@
 </script>
 
 <button
-  class="btn-ghost px-2.5"
+  class="btn-icon"
   type="button"
   title={theme.dark ? '切换到浅色主题' : '切换到深色主题'}
   aria-label={theme.dark ? '切换到浅色主题' : '切换到深色主题'}

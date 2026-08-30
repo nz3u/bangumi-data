@@ -29,7 +29,7 @@
 
   // 加载中/失败：固定小占位框；加载完成：包裹图片自然尺寸（受最大宽高约束）
   const cardCls = $derived(
-    `relative overflow-hidden rounded-md border border-neutral-200 bg-neutral-50 shadow-sm dark:border-neutral-700 dark:bg-neutral-800 ${
+    `relative overflow-hidden rounded-lg border border-neutral-200/80 bg-neutral-50 shadow-sm dark:border-white/[0.08] dark:bg-white/[0.04] ${
       loaded ? 'w-fit' : 'flex aspect-[3/4] w-24 items-center justify-center'
     } ${cls}`
   )

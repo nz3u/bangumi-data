@@ -284,8 +284,8 @@
   const hasCollapsible = $derived((data?.items ?? []).some((c) => (c.subjects?.length ?? 0) > COLLAB_PREVIEW_N))
 
   const tagIdleCls =
-    'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'
-  const tagOnCls = 'rounded-full bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sky-500'
+    'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sakura-400 hover:text-sakura-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sakura-500 dark:hover:text-sakura-400'
+  const tagOnCls = 'rounded-full bg-sakura-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sakura-500'
   const tagNegCls = 'rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 line-through decoration-red-500 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900'
 
   // ---- 前端快速搜索 ----
@@ -311,8 +311,8 @@
   })
 </script>
 
-<div class="grid grid-cols-[minmax(0,1fr)] gap-4">
-  <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
+<div class="rise grid grid-cols-[minmax(0,1fr)] gap-4">
+  <form class="grid gap-3 card p-4 lg:grid-cols-[1fr_auto] lg:items-end" onsubmit={submit}>
     <div>
       <label class="label" for="collab-pid">人物 ID</label>
       <PersonSuggest inputId="collab-pid" placeholder="如：1、名字或粘贴 https://bgm.tv/person/1" bind:text={pidInput} bind:pid={pidSel} onpick={pickPerson} />
@@ -328,14 +328,21 @@
   {/if}
 
   {#if loading && !data}
-    <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
+    <div class="card p-4">
+      <div class="skeleton mb-3 h-4 w-40"></div>
+      <div class="space-y-2.5">
+        {#each Array.from({ length: 8 }) as _, i}
+          <div class="skeleton h-5" style:width="{96 - (i % 4) * 9}%"></div>
+        {/each}
+      </div>
+    </div>
   {:else if data}
     <div class="relative">
       <!-- 左侧悬浮轨：当前人物职位（细长列表，悬浮于页面左侧留白） -->
       {#if facets}
         <div class="absolute inset-y-0 left-0 z-10 hidden w-28 -translate-x-full pr-2 min-[1440px]:block">
           <nav
-            class="sticky top-6 flex max-h-[90vh] flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1.5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-20 flex max-h-[90vh] flex-col gap-1 card p-1.5 shadow-md"
             aria-label="当前人物职位筛选"
           >
             <div class="flex items-center justify-between gap-1 px-1 pt-0.5">
@@ -356,7 +363,7 @@
               {#each selfTagsShown as t (t.key)}
                 <button
                   type="button"
-                  class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${negSelA.includes(t.key) ? tagNegCls : selA.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
+                  class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${negSelA.includes(t.key) ? tagNegCls : selA.includes(t.key) ? 'bg-sakura-600 font-medium text-white hover:bg-sakura-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sakura-400 hover:text-sakura-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sakura-500 dark:hover:text-sakura-400'}`}
                   title={`左键：包含「${t.label}」· 右键：排除「${t.label}」`}
                   onclick={() => toggleTag('a', t.key, false)}
                   oncontextmenu={(e) => { e.preventDefault(); toggleTag('a', t.key, true) }}
@@ -373,7 +380,7 @@
         <!-- 右侧悬浮轨：合作人物职位（多选，内部滚动，悬停于整体外侧） -->
         <div class="absolute inset-y-0 right-0 z-10 hidden w-40 translate-x-full pl-3 2xl:block">
           <nav
-            class="sticky top-6 flex max-h-[90vh] flex-col rounded-lg border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+            class="sticky top-20 flex max-h-[90vh] flex-col card p-2 shadow-md"
             aria-label="合作人物职位筛选"
           >
             <div class="flex items-center justify-between gap-1 px-1">
@@ -416,7 +423,7 @@
         class:pointer-events-none={loading}
       >
       <!-- 左侧：人物简介 -->
-      <aside class="rounded-lg border border-neutral-200 bg-white/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+      <aside class="card p-4">
         <div class="mb-3 flex flex-col items-center">
           <PersonAvatar
             pid={data.person.id}
@@ -433,21 +440,21 @@
         </div>
 
         <dl class="grid grid-cols-2 gap-1 text-xs">
-          <div class="rounded bg-neutral-100 px-2 py-1.5 dark:bg-neutral-800/60">
+          <div class="rounded-lg bg-neutral-100/70 px-2 py-1.5 dark:bg-white/[0.04]">
             <dt class="text-neutral-500">参与条目</dt>
-            <dd class="text-base font-semibold">{data.person.subjects_count}</dd>
+            <dd class="font-mono text-base font-semibold tabular-nums">{data.person.subjects_count}</dd>
           </div>
-          <div class="rounded bg-neutral-100 px-2 py-1.5 dark:bg-neutral-800/60">
+          <div class="rounded-lg bg-neutral-100/70 px-2 py-1.5 dark:bg-white/[0.04]">
             <dt class="text-neutral-500">合作人物</dt>
-            <dd class="text-base font-semibold">{data.total}</dd>
+            <dd class="font-mono text-base font-semibold tabular-nums">{data.total}</dd>
           </div>
-          <div class="rounded bg-neutral-100 px-2 py-1.5 dark:bg-neutral-800/60">
+          <div class="rounded-lg bg-neutral-100/70 px-2 py-1.5 dark:bg-white/[0.04]">
             <dt class="text-neutral-500">评论</dt>
-            <dd class="text-base font-semibold">{data.person.comments}</dd>
+            <dd class="font-mono text-base font-semibold tabular-nums">{data.person.comments}</dd>
           </div>
-          <div class="rounded bg-neutral-100 px-2 py-1.5 dark:bg-neutral-800/60">
+          <div class="rounded-lg bg-neutral-100/70 px-2 py-1.5 dark:bg-white/[0.04]">
             <dt class="text-neutral-500">收藏</dt>
-            <dd class="text-base font-semibold">{data.person.collects}</dd>
+            <dd class="font-mono text-base font-semibold tabular-nums">{data.person.collects}</dd>
           </div>
         </dl>
 
@@ -470,7 +477,7 @@
       <section class="min-w-0 grid gap-3">
         <!-- 窄屏回退：职位标签横向排布于列表上方（达到各自阈值后改用两侧悬浮轨） -->
         {#if facets}
-          <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 min-[1440px]:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="grid gap-y-2 card p-3 min-[1440px]:hidden">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 <span>当前人物职位{selA.length > 0 || negSelA.length > 0 ? `（已选 ${selA.length + negSelA.length}）` : '（可多选）'}</span>
@@ -502,7 +509,7 @@
               </div>
             </div>
           </div>
-          <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 2xl:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="grid gap-y-2 card p-3 2xl:hidden">
             <div class="min-w-0">
               <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                 <span>合作人物职位{selB.length > 0 || negSelB.length > 0 ? `（已选 ${selB.length + negSelB.length}）` : '（可多选）'}</span>
@@ -546,17 +553,17 @@
           {#if facets && (selA.length > 0 || selB.length > 0 || negSelA.length > 0 || negSelB.length > 0)}
             <span class="text-xs font-normal text-neutral-500 dark:text-neutral-400">
               已选组合：
-              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.self, selA, negSelA)}</b>
+              <b class="font-medium text-sakura-600 dark:text-sakura-400">{selLabelStr(facets.self, selA, negSelA)}</b>
               ×
-              <b class="font-medium text-sky-600 dark:text-sky-400">{selLabelStr(facets.other, selB, negSelB)}</b>
+              <b class="font-medium text-sakura-600 dark:text-sakura-400">{selLabelStr(facets.other, selB, negSelB)}</b>
               <button class="btn-mini ml-1" type="button" onclick={clearAllTags}>重置</button>
             </span>
           {/if}
           {#if filter.trim()}
-            <span class="chip text-sky-600 dark:text-sky-400">命中 {visibleItems?.length ?? 0}/{data.items.length}</span>
+            <span class="chip text-sakura-600 dark:text-sakura-400">命中 {visibleItems?.length ?? 0}/{data.items.length}</span>
           {/if}
           {#if loading}
-            <span class="inline-flex items-center gap-1 text-xs font-normal text-sky-600 dark:text-sky-400">
+            <span class="inline-flex items-center gap-1 text-xs font-normal text-sakura-600 dark:text-sakura-400">
               <span class="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
               更新中…
             </span>
@@ -564,7 +571,7 @@
           {#if hasCollapsible}
             <button
               type="button"
-              class="ml-auto inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+              class="ml-auto inline-flex size-6 shrink-0 items-center justify-center self-center rounded text-neutral-500 hover:bg-neutral-200/70 hover:text-sakura-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-sakura-400"
               title={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
               aria-label={expandAllSubj ? '全部收起合作条目' : '全部展开合作条目'}
               onclick={toggleAllSubj}
@@ -612,30 +619,30 @@
         {#key renderSeq}
         <div class="grid min-w-0 w-full gap-3" in:fade={{ duration: 150 }}>
         {#if data.items.length === 0}
-          <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="card py-8 text-center text-sm text-neutral-500">
             {(selA.length > 0 || selB.length > 0 || negSelA.length > 0 || negSelB.length > 0) ? '该职位组合下未找到合作记录' : '未找到合作记录'}
           </div>
         {:else if visibleItems && visibleItems.length === 0}
-          <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">无匹配内容</div>
+          <div class="card py-8 text-center text-sm text-neutral-500">无匹配内容</div>
         {:else}
-          <div class="rounded-lg border border-neutral-200 bg-white/60 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="card px-4 py-2">
             <Pagination total={data.total} page={page} size={size} onchange={changePage} />
           </div>
-          <div class="min-w-0 w-full space-y-3">
+          <div class="stagger min-w-0 w-full space-y-3">
             {#each visibleItems as col (col.person_id)}
-              <div class="rounded-lg border border-neutral-200 bg-white/60 p-3 odd:bg-white even:bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/60 dark:odd:bg-neutral-900/60 dark:even:bg-neutral-900">
+              <div class="card p-3 transition-[border-color,box-shadow] hover:border-sakura-300/60 hover:shadow-card dark:hover:border-sakura-500/25">
                 <div class="flex min-w-0 w-full gap-3">
                   <PersonAvatar
                     pid={col.person_id}
                     name={col.name}
                     size="grid"
-                    class="size-14 rounded-full bg-sky-100 text-xl font-bold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900"
+                    class="size-14 rounded-full bg-sakura-100 text-xl font-bold text-sakura-700 hover:bg-sakura-200 dark:bg-sakura-950 dark:text-sakura-300 dark:hover:bg-sakura-900"
                     title="查看该人物的 collaborations"
                     onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
                   />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
-                      <button type="button" class="cursor-pointer font-medium text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} /></button>
+                      <button type="button" class="cursor-pointer font-medium text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} /></button>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
                         {#if !subjExpanded(col.person_id)}
@@ -643,7 +650,7 @@
                         {/if}
                         <button
                           type="button"
-                          class="{subjExpanded(col.person_id) ? 'ml-auto' : ''} inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sky-600 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+                          class="{subjExpanded(col.person_id) ? 'ml-auto' : ''} inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sakura-600 dark:hover:bg-neutral-800 dark:hover:text-sakura-400"
                           title={subjExpanded(col.person_id) ? '收起合作条目' : `展开全部 ${col.subjects.length} 条合作条目`}
                           aria-label={subjExpanded(col.person_id) ? `收起 ${col.name} 的合作条目` : `展开 ${col.name} 的全部 ${col.subjects.length} 条合作条目`}
                           onclick={() => toggleSubj(col.person_id)}
@@ -673,7 +680,7 @@
                           <button
                             type="button"
                             onclick={() => openDetail('subject', s.id, s)}
-                            class="cursor-pointer truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
+                            class="cursor-pointer truncate text-sm text-sakura-600 hover:underline dark:text-sakura-400"
                             title={`${s.date || '未知日期'} · ${s.type_name}${s.roles.length ? ' · ' + s.roles.join(' / ') : ''}`}
                           ><Highlight text={s.name_cn || s.name} q={filter} /></button>
                           {#if s.roles.length}
@@ -688,7 +695,7 @@
               </div>
             {/each}
           </div>
-          <div class="mt-3 rounded-lg border border-neutral-200 bg-white/60 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div class="mt-3 card px-4 py-2">
             <Pagination total={data.total} page={page} size={size} onchange={changePage} />
           </div>
         {/if}

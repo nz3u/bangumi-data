@@ -3,6 +3,7 @@
   // 目前提供「外部链接」配置：下拉选择镜像站（bgm.tv / bangumi.tv / chii.in），
   // 选「自定义…」时出现输入框；所有改动实时写入 localStorage 并全局生效。
   import { onMount } from 'svelte'
+  import { fly } from 'svelte/transition'
   import {
     settings,
     saveSettings,
@@ -69,14 +70,14 @@
 
 <div class="relative" bind:this={root}>
   <button
-    class="btn-ghost px-2.5"
+    class="btn-icon group"
     type="button"
     title="设置"
     aria-label="设置"
     aria-expanded={open}
     onclick={toggle}
   >
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-4 transition-transform duration-300 group-hover:rotate-45" aria-hidden="true">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -84,7 +85,8 @@
 
   {#if open}
     <div
-      class="absolute right-0 top-full z-50 mt-2 w-72 rounded-md border border-neutral-200 bg-white p-4 text-sm shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+      class="absolute right-0 top-full z-50 mt-2 max-h-[calc(100vh-6rem)] w-72 origin-top-right transform-gpu overflow-y-auto overscroll-contain rounded-xl border border-neutral-200/80 bg-white p-4 text-sm shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]"
+      transition:fly={{ y: -6, duration: 150 }}
       role="dialog"
       aria-label="站点设置"
     >
@@ -162,7 +164,7 @@
           <label class="flex items-center gap-1.5 text-sm">
             <input
               type="checkbox"
-              class="size-3.5 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600"
+              class="size-3.5 rounded border-neutral-300 text-sakura-600 focus:ring-sakura-500 dark:border-neutral-600"
               checked={settings.highlightAreas?.includes(area.value)}
               onchange={() => toggleHighlightArea(area.value)}
             />
@@ -183,7 +185,7 @@
           aria-checked={searchHi}
           aria-labelledby="search-hl-label"
           title="搜索建议与搜索结果中高亮命中关键词"
-          class={`relative inline-flex h-4.5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${searchHi ? 'bg-sky-600' : 'bg-neutral-300 dark:bg-neutral-700'}`}
+          class={`relative inline-flex h-4.5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${searchHi ? 'bg-sakura-600' : 'bg-neutral-300 dark:bg-neutral-700'}`}
           onclick={toggleSearchHighlight}
         >
           <span
@@ -203,7 +205,7 @@
             <input
               type="radio"
               name="hl-color"
-              class="size-3.5 border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600"
+              class="size-3.5 border-neutral-300 text-sakura-600 focus:ring-sakura-500 dark:border-neutral-600"
               value={p.value}
               bind:group={settings.highlightColor}
               onchange={saveSettings}

@@ -1,5 +1,6 @@
 <script>
   import { onDestroy } from 'svelte'
+  import { fly } from 'svelte/transition'
   import { getPerson, searchPersons } from '../lib/api.js'
   import { goToTab } from '../lib/nav.js'
   import Highlight from './Highlight.svelte'
@@ -201,7 +202,8 @@
   {#if open && items.length > 0}
     <ul
       bind:this={listEl}
-      class="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+      class="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-xl border border-neutral-200/80 bg-white py-1 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]"
+      transition:fly={{ y: -4, duration: 130 }}
       role="listbox"
       aria-label="人物搜索建议"
     >
@@ -209,7 +211,7 @@
         <li role="option" aria-selected={active < 0}>
           <button
             type="button"
-            class={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${active < 0 ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}`}
+            class={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${active < 0 ? 'bg-sakura-50 text-sakura-700 dark:bg-sakura-950/60 dark:text-sakura-300' : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}`}
             title="存在同名人物，点击或回车跳转人物搜索页查看全部结果"
             onmousedown={(e) => e.preventDefault()}
             onclick={goDupSearch}
@@ -228,7 +230,7 @@
         <li role="option" aria-selected={i === active}>
           <button
             type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 {i === active ? 'bg-sky-50 dark:bg-sky-950/60' : ''}"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 {i === active ? 'bg-sakura-50 dark:bg-sakura-950/60' : ''}"
             onmousedown={(e) => e.preventDefault()}
             onclick={() => pick(p)}
             onmousemove={() => (active = i)}
@@ -241,7 +243,7 @@
       {/each}
     </ul>
   {:else if open && loading}
-    <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-xl border border-neutral-200/80 bg-white px-3 py-2 text-xs text-neutral-500 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]">
       搜索中…
     </div>
   {/if}

@@ -10,7 +10,7 @@
 
 <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
+    <dl class="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
       <div><dt class="label">收藏</dt><dd>{d.collects}</dd></div>
       <div><dt class="label">评论</dt><dd>{d.comments}</dd></div>

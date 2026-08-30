@@ -2,6 +2,24 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  /* 樱花色阶：300 号对齐 bgm.tv 品牌粉 #F09199，600 号保证白底文字对比度 */
+  --color-sakura-50: #fdf2f4;
+  --color-sakura-100: #fbe7eb;
+  --color-sakura-200: #f8ccd4;
+  --color-sakura-300: #f0939b;
+  --color-sakura-400: #e76d7e;
+  --color-sakura-500: #dc4e66;
+  --color-sakura-600: #c83850;
+  --color-sakura-700: #a62c42;
+  --color-sakura-800: #862537;
+  --color-sakura-900: #702234;
+  --color-sakura-950: #3f0a19;
+
+  --shadow-card: 0 1px 2px rgb(16 16 24 / 0.04), 0 10px 28px -18px rgb(16 16 24 / 0.14);
+  --shadow-pop: 0 4px 6px -2px rgb(16 16 24 / 0.05), 0 16px 40px -12px rgb(16 16 24 / 0.18);
+}
+
 :root {
   color-scheme: light;
 }
@@ -11,7 +29,28 @@
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  @apply bg-[#f4f4f6] text-neutral-800 antialiased dark:bg-[#0c0c10] dark:text-neutral-100;
+}
+
+/* 页面顶部一抹樱花→紫藤极光（纯装饰，不响应指针、不参与滚动） */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(640px 340px at 10% -10%, rgb(240 147 153 / 0.18), transparent 70%),
+    radial-gradient(760px 400px at 90% -14%, rgb(139 124 200 / 0.13), transparent 70%);
+}
+
+.dark body::before {
+  background:
+    radial-gradient(640px 340px at 10% -10%, rgb(240 147 153 / 0.09), transparent 70%),
+    radial-gradient(760px 400px at 90% -14%, rgb(139 124 200 / 0.10), transparent 70%);
 }
 
 html,
@@ -19,43 +58,165 @@ body {
   overflow-x: clip;
 }
 
+@layer base {
+  ::selection {
+    background: var(--color-sakura-200);
+  }
+
+  .dark ::selection {
+    background: rgb(220 78 102 / 0.45);
+  }
+
+  /* 键盘可达性：统一的樱花色焦点环 */
+  :focus-visible {
+    outline: 2px solid var(--color-sakura-500);
+    outline-offset: 2px;
+  }
+
+  /* 交互微反馈：颜色/阴影/变换平滑过渡（变换用于 active 缩放与箭头旋转） */
+  button,
+  a,
+  .chip {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+
+  /* 细滚动条（桌面端更轻盈）；分层书写以便工具类（如 no-scrollbar）可覆盖 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(16 16 24 / 0.18) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer components {
+  /* 内容卡片：圆角、细环、柔和投影 */
+  .card {
+    @apply rounded-xl border border-neutral-200/70 bg-white shadow-card dark:border-white/[0.07] dark:bg-neutral-900/70 dark:shadow-none;
+  }
+
   .input {
-    @apply w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
+    @apply w-full rounded-lg border border-neutral-300/80 bg-white px-3 py-1.5 text-sm text-neutral-900 shadow-sm outline-none transition-all placeholder:text-neutral-400 focus:border-sakura-400 focus:ring-4 focus:ring-sakura-500/10 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-sakura-500/50 dark:focus:ring-sakura-400/10;
   }
   .input-xs {
-    @apply w-full rounded-md border border-neutral-300 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
+    @apply w-full rounded-md border border-neutral-300/80 bg-white px-2 py-0.5 text-[11px] leading-tight text-neutral-900 outline-none transition-all placeholder:text-neutral-400 focus:border-sakura-400 focus:ring-2 focus:ring-sakura-500/10 dark:border-white/[0.09] dark:bg-white/[0.04] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-sakura-500/50 dark:focus:ring-sakura-400/10;
   }
   .btn {
-    @apply rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-sakura-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm shadow-sakura-600/25 transition-all hover:bg-sakura-500 hover:shadow-md hover:shadow-sakura-500/30 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-ghost {
-    @apply rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:bg-neutral-200/70 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-200/80 bg-white/70 px-4 py-1.5 text-sm text-neutral-600 shadow-sm transition-all hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900 active:scale-[0.98] disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-300 dark:hover:bg-white/[0.08] dark:hover:text-white;
+  }
+  /* 方形图标按钮（头部右侧设置/GitHub/主题） */
+  .btn-icon {
+    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200/80 bg-white/70 text-neutral-500 shadow-sm transition-all hover:bg-neutral-50 hover:text-neutral-900 active:scale-95 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-400 dark:hover:bg-white/[0.08] dark:hover:text-white;
+  }
+  .btn-mini {
+    @apply inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200/80 bg-white/60 px-2 py-0.5 text-xs text-neutral-600 transition-all hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-900 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-300 dark:hover:bg-white/[0.08] dark:hover:text-white;
   }
   .label {
     @apply mb-1 block text-xs text-neutral-500 dark:text-neutral-400;
   }
   .chip {
-    @apply inline-block rounded bg-neutral-200/80 px-1.5 py-0.5 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300;
+    @apply inline-flex shrink-0 items-center gap-1 rounded-full bg-neutral-100/90 px-2 py-0.5 text-[11px] whitespace-nowrap text-neutral-600 ring-1 ring-black/[0.04] dark:bg-white/[0.06] dark:text-neutral-300 dark:ring-white/[0.07];
   }
-  /* 元标签：可信度更高的分类标签，色块 + 点状着重下划线区分（不加粗） */
+  /* 元标签：可信度更高的分类标签，樱花色块 + 点状着重下划线区分（不加粗） */
   .chip-meta {
-    @apply inline-block rounded bg-sky-100/80 px-1.5 py-0.5 text-[11px] text-sky-700 underline decoration-sky-400/80 decoration-dotted underline-offset-2 dark:bg-sky-900/50 dark:text-sky-300 dark:decoration-sky-500/80;
-  }
-  .btn-mini {
-    @apply rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-200/70 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800;
+    @apply inline-flex shrink-0 items-center rounded-full bg-sakura-100/80 px-2 py-0.5 text-[11px] whitespace-nowrap text-sakura-700 underline decoration-sakura-400/80 decoration-dotted underline-offset-2 dark:bg-sakura-500/15 dark:text-sakura-300 dark:decoration-sakura-400/60;
   }
   /* 详情抽屉内各信息区块之间的短分割线 */
   .divider-short {
-    @apply ml-auto mr-auto mb-3 h-px w-16 border-0 bg-neutral-200 dark:bg-neutral-700;
+    @apply ml-auto mr-auto mb-3 h-px w-16 border-0 bg-neutral-200 dark:bg-white/[0.08];
+  }
+  /* 品牌看板娘雪碧图（取自 bgm.tv rc3，实现同源站）：
+     显示 48x60（源站 40x50 的 1.2 倍），整图按 336x90 缩放；
+     首帧位于 0 -12px，musume_1..6 依次 -48px 步进；
+     配合 -mb-2.5 让底边贴住顶栏底框而不撑高 py-2.5 的顶栏 */
+  .brand-musume {
+    width: 48px;
+    height: 60px;
+    background: url('/img/bg_musume_2x.png') 0 -12px no-repeat;
+    background-size: 336px 90px;
   }
   .tbl {
     @apply w-full text-sm;
   }
   .tbl th {
-    @apply border-b border-neutral-200 px-2 py-2 text-left text-xs font-medium text-neutral-500 dark:border-neutral-800 dark:text-neutral-400;
+    @apply border-b border-neutral-200/80 px-2 py-2 text-left text-xs font-medium tracking-wide text-neutral-400 dark:border-white/[0.07] dark:text-neutral-500;
   }
   .tbl td {
-    @apply border-b border-neutral-100 px-2 py-1.5 align-top dark:border-neutral-900;
+    @apply border-b border-neutral-100 px-2 py-1.5 align-top dark:border-white/[0.04];
   }
+  /* 加载占位：微光扫过 */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-neutral-200/70 dark:bg-white/[0.06];
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    animation: shimmer 1.4s infinite;
+  }
+  .dark .skeleton::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07), transparent);
+  }
+}
+
+/* ---- 动效 ---- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes fade-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* 尊重系统「减少动态效果」设置：关闭全部装饰动画 */
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+  .fade-down {
+    animation: fade-down 0.32s ease-out backwards;
+  }
+  /* 子元素交错入场（fill 用 backwards，动画结束后交还 transform 给 hover 等交互） */
+  .stagger > * {
+    animation: rise 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+  .stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger > *:nth-child(4) { animation-delay: 120ms; }
+  .stagger > *:nth-child(5) { animation-delay: 160ms; }
+  .stagger > *:nth-child(6) { animation-delay: 200ms; }
+  .stagger > *:nth-child(7) { animation-delay: 240ms; }
+  .stagger > *:nth-child(8) { animation-delay: 280ms; }
+  .stagger > *:nth-child(9) { animation-delay: 320ms; }
+  .stagger > *:nth-child(10) { animation-delay: 360ms; }
+  .stagger > *:nth-child(n + 11) { animation-delay: 400ms; }
 }

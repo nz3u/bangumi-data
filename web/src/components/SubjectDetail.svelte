@@ -9,7 +9,7 @@
 
 <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
+    <dl class="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
       <div><dt class="label">日期</dt><dd>{fmtDate(d.date)}</dd></div>
       <div><dt class="label">评分</dt><dd class="text-amber-600 dark:text-amber-400">{fmtScore(d.score)}</dd></div>

@@ -1,5 +1,5 @@
 <a
-      class="btn-ghost px-2.5"
+      class="btn-icon"
       href="https://github.com/nz3u/bangumi-data"
       target="_blank"
       rel="noopener noreferrer"
