@@ -72,7 +72,7 @@
         aria-current={i === active ? 'true' : undefined}
         class={`flex cursor-pointer items-center px-1 py-0.5 text-left transition-colors ${
           i === active
-            ? 'rounded bg-neutral-100 text-sky-600 dark:bg-neutral-800 dark:text-sky-400'
+            ? 'rounded bg-neutral-100 text-sakura-600 dark:bg-neutral-800 dark:text-sakura-400'
             : 'text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300'
         }`}
         onclick={() => jump(label)}

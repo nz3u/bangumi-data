@@ -18,7 +18,7 @@
 
 <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
   <section class="mb-4 min-w-40 flex-[1_1_16rem]">
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-5">
+    <dl class="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-6 gap-y-1.5 text-sm sm:grid-cols-5">
       <div><dt class="label">ID</dt><dd class="text-neutral-500">{d.id}</dd></div>
       <div><dt class="label">参与作品</dt><dd>{d.works_count || '—'}</dd></div>
       <div><dt class="label">出演角色</dt><dd>{d.roles_count || '—'}</dd></div>
@@ -50,7 +50,7 @@
           <input
             type="radio"
             name="collab-pick"
-            class="size-3 shrink-0 cursor-pointer accent-sky-600 dark:accent-sky-400"
+            class="size-3 shrink-0 cursor-pointer accent-sakura-600 dark:accent-sakura-400"
             checked={picked === c.person_id}
             onchange={() => (picked = c.person_id)}
             title={`选中后可查看与 ${c.name} 的双人合作作品`}
@@ -67,7 +67,7 @@
     <div class="mt-1 flex flex-col items-start gap-0.5">
       <button
         type="button"
-        class="inline-block cursor-pointer text-xs text-sky-600 hover:underline dark:text-sky-400"
+        class="inline-block cursor-pointer text-xs text-sakura-600 hover:underline dark:text-sakura-400"
         onclick={() => { const pid = id; closeDetail(); goToTab('/collaborations', { id: pid }) }}
       >
         查看全部合作人物 →
@@ -75,7 +75,7 @@
       {#if picked != null && picked !== id}
         <button
           type="button"
-          class="inline-block cursor-pointer text-xs text-sky-600 hover:underline dark:text-sky-400"
+          class="inline-block cursor-pointer text-xs text-sakura-600 hover:underline dark:text-sakura-400"
           onclick={() => {
             const a = id
             const b = picked

@@ -69,10 +69,10 @@
 
 <Drawer open={!!kind} label={LABELS[kind] ?? '详情'} onclose={closeDetail}>
   {#if kind && id}
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-neutral-200/80 px-4 py-3 dark:border-white/[0.06]">
       <h3 class="min-w-0 max-w-full truncate text-base font-semibold">
         <!-- 唯一保留的外链：指向设置中配置的 Bangumi 站点 -->
-        <a href={externalUrl(kind, id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400">
+        <a href={externalUrl(kind, id)} target="_blank" rel="noreferrer" class="text-sakura-600 hover:underline dark:text-sakura-400">
           {head ? head.name_cn || head.name : `${LABELS[kind] ?? ''}加载中…`}
         </a>
       </h3>

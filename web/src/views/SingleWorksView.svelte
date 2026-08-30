@@ -132,8 +132,8 @@
   })
 
   const tagIdleCls =
-    'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'
-  const tagOnCls = 'rounded-full bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sky-500'
+    'rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs text-neutral-600 hover:border-sakura-400 hover:text-sakura-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sakura-500 dark:hover:text-sakura-400'
+  const tagOnCls = 'rounded-full bg-sakura-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-sakura-500'
 
   // ---- 前端快速筛选 ----
   // 搜索范围覆盖全部展示内容：分组名、职务、日期、标题（中文名/原名）、类型标签。
@@ -171,8 +171,8 @@
   })
 </script>
 
-<div class="grid grid-cols-[minmax(0,1fr)] gap-4">
-  <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-[1fr_auto] lg:items-end dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={submit}>
+<div class="rise grid grid-cols-[minmax(0,1fr)] gap-4">
+  <form class="grid gap-3 card p-4 lg:grid-cols-[1fr_auto] lg:items-end" onsubmit={submit}>
     <div>
       <label class="label" for="roles-pid">人物 ID</label>
       <PersonSuggest inputId="roles-pid" placeholder="如：1、名字或粘贴 https://bgm.tv/person/1" bind:text={idInput} bind:pid={pidSel} onpick={(p) => load(p.id)} />
@@ -188,20 +188,27 @@
   {/if}
 
   {#if loading}
-    <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
+    <div class="card p-4">
+      <div class="skeleton mb-3 h-4 w-40"></div>
+      <div class="space-y-2.5">
+        {#each Array.from({ length: 8 }) as _, i}
+          <div class="skeleton h-5" style:width="{96 - (i % 4) * 9}%"></div>
+        {/each}
+      </div>
+    </div>
   {:else if data}
     <!-- 头部：人物简介 -->
-    <div class="rounded-lg border border-neutral-200 bg-white/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <div class="card p-4">
       <div class="flex flex-wrap items-center justify-center gap-4">
         <div class="flex items-center gap-3">
           <PersonAvatar
             pid={data.person.id}
             name={data.person.name}
             size="grid"
-            class="size-12 rounded-full bg-sky-100 text-lg font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+            class="size-12 rounded-full bg-sakura-100 text-lg font-bold text-sakura-700 dark:bg-sakura-950 dark:text-sakura-300"
           />
           <div>
-            <button type="button" class="cursor-pointer font-semibold text-sky-600 hover:underline dark:text-sky-400" onclick={() => openDetail('person', data.person.id, data.person)}>{data.person.name}</button>
+            <button type="button" class="cursor-pointer font-semibold text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', data.person.id, data.person)}>{data.person.name}</button>
             <div class="mt-0.5 flex flex-wrap gap-1">
               <span class="chip">{data.person.type_name}</span>
               {#each data.person.career ?? [] as cb}
@@ -212,20 +219,20 @@
         </div>
         <span class="chip ml-2">参与作品 {data.total} 条</span>
         {#if data.items.length > 0 && (filter.trim() || selPos.length > 0)}
-          <span class="chip ml-2 text-sky-600 dark:text-sky-400">命中 {filtered?.matched ?? 0} 条</span>
+          <span class="chip ml-2 text-sakura-600 dark:text-sakura-400">命中 {filtered?.matched ?? 0} 条</span>
         {/if}
       </div>
     </div>
 
     {#if data.items.length === 0}
-      <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">未找到该人物参与的作品</div>
+      <div class="card py-8 text-center text-sm text-neutral-500">未找到该人物参与的作品</div>
     {:else}
       <div class="relative">
         <!-- 左侧悬浮轨：当前人物职位（同「人物合作」页，悬浮于左侧留白） -->
         {#if facets}
           <div class="absolute inset-y-0 left-0 z-10 hidden w-28 -translate-x-full pr-2 min-[1440px]:block">
             <nav
-              class="sticky top-6 flex max-h-[90vh] flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1.5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95"
+              class="sticky top-20 flex max-h-[90vh] flex-col gap-1 card p-1.5 shadow-md"
               aria-label="当前人物职位筛选"
             >
               <div class="flex items-center justify-between gap-1 px-1 pt-0.5">
@@ -246,7 +253,7 @@
                 {#each posTagsShown as t (t.key)}
                   <button
                     type="button"
-                    class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${selPos.includes(t.key) ? 'bg-sky-600 font-medium text-white hover:bg-sky-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sky-500 dark:hover:text-sky-400'}`}
+                    class={`flex w-full shrink-0 items-baseline justify-between gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${selPos.includes(t.key) ? 'bg-sakura-600 font-medium text-white hover:bg-sakura-500' : 'border border-neutral-300 bg-white text-neutral-600 hover:border-sakura-400 hover:text-sakura-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-sakura-500 dark:hover:text-sakura-400'}`}
                     title={`筛选该人物担任「${t.label}」的作品`}
                     onclick={() => togglePos(t.key)}
                   >
@@ -263,7 +270,7 @@
         <div class="grid min-w-0 gap-3">
           <!-- 窄屏回退：职位标签横向排布于列表上方（1440px 及以上改用左侧悬浮轨） -->
           {#if facets}
-            <div class="grid gap-y-2 rounded-lg border border-neutral-200 bg-white/60 p-3 min-[1440px]:hidden dark:border-neutral-800 dark:bg-neutral-900/60">
+            <div class="grid gap-y-2 card p-3 min-[1440px]:hidden">
               <div class="min-w-0">
                 <div class="mb-1 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                   <span>当前人物职位{selPos.length > 0 ? `（已选 ${selPos.length}）` : '（可多选）'}</span>
@@ -311,21 +318,21 @@
           </div>
 
           {#if filtered && filtered.groups.length === 0}
-            <div class="rounded-lg border border-neutral-200 bg-white/60 py-8 text-center text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60">{selPos.length > 0 ? '所选职位下未找到作品' : '无匹配内容'}</div>
+            <div class="card py-8 text-center text-sm text-neutral-500">{selPos.length > 0 ? '所选职位下未找到作品' : '无匹配内容'}</div>
           {:else if filtered}
             <!-- 按职务分组，隔行排列 -->
-            <div class="space-y-3">
+            <div class="stagger space-y-3">
               {#each filtered.groups as g (g.label)}
-                <section class="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
-                    <h3 class="border-b border-neutral-200 bg-neutral-100/80 px-4 py-2 text-sm font-semibold dark:border-neutral-800 dark:bg-neutral-800/60">
+                <section class="card overflow-hidden">
+                    <h3 class="border-b border-neutral-100 bg-neutral-50/80 px-4 py-2 text-sm font-semibold dark:border-white/[0.06] dark:bg-white/[0.03]">
                       <Highlight text={g.label} q={filter} />
                       <small class="ml-1 font-normal text-neutral-400">(x{g.works.length})</small>
                     </h3>
-                  <div class="divide-y divide-neutral-100 dark:divide-neutral-900">
+                  <div class="divide-y divide-neutral-100 dark:divide-white/[0.06]">
                     {#each g.works as w, i (w.id)}
-                      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 {i % 2 === 1 ? 'bg-neutral-50 dark:bg-neutral-900/40' : 'bg-white/60 dark:bg-neutral-900/60'}">
+                      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 ">
                         <span class="shrink-0 text-xs tabular-nums text-neutral-400"><Highlight text={w.date || '—'} q={filter} /></span>
-                        <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sky-600 hover:underline dark:text-sky-400"
+                        <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sakura-600 hover:underline dark:text-sakura-400"
                           title="{w.date || ''} {w.type_name}"
                         >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
                         <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>

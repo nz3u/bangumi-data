@@ -7,6 +7,7 @@
   // - 键盘：↑↓ 循环高亮，回车确认高亮项（拦截表单提交），Esc 关闭；
   //   无建议时回车交还原生表单提交。
   import PinyinMatch from 'pinyin-match'
+  import { fly } from 'svelte/transition'
   import Highlight from './Highlight.svelte'
   import { loadTagPool } from '../lib/api.js'
   import { fmtCompact } from '../lib/format.js'
@@ -178,17 +179,18 @@
   />
   {#if open}
     {#if poolError}
-      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-xl border border-neutral-200/80 bg-white px-3 py-2 text-xs text-neutral-500 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]">
         标签候选加载失败：{poolError}
       </div>
     {:else if poolLoading && !pool}
-      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-xl border border-neutral-200/80 bg-white px-3 py-2 text-xs text-neutral-500 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]">
         标签候选加载中…
       </div>
     {:else if items.length > 0}
       <ul
         bind:this={listEl}
-        class="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+        class="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-xl border border-neutral-200/80 bg-white py-1 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]"
+        transition:fly={{ y: -4, duration: 130 }}
         role="listbox"
         aria-label="标签建议"
       >
@@ -196,7 +198,7 @@
           <li role="option" aria-selected={i === active}>
             <button
               type="button"
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 {i === active ? 'bg-sky-50 dark:bg-sky-950/60' : ''}"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 {i === active ? 'bg-sakura-50 dark:bg-sakura-950/60' : ''}"
               title="{polarity === '-' ? '排除' : '包含'}标签「{t.name}」（使用 {t.cnt} 次）"
               onmousedown={(e) => e.preventDefault()}
               onclick={() => pick(t)}
@@ -210,7 +212,7 @@
         {/each}
       </ul>
     {:else if query}
-      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      <div class="absolute inset-x-0 top-full z-20 mt-1 rounded-xl border border-neutral-200/80 bg-white px-3 py-2 text-xs text-neutral-500 shadow-pop ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:bg-neutral-900 dark:ring-white/[0.06]">
         无匹配标签，回车按原词筛选
       </div>
     {/if}

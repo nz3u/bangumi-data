@@ -108,7 +108,7 @@
       class="absolute -right-1 -top-1 z-10 flex size-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-700"
       title="头像解析中…"
     >
-      <svg class="size-2.5 animate-spin text-sky-600 dark:text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+      <svg class="size-2.5 animate-spin text-sakura-600 dark:text-sakura-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
         <path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round" />
       </svg>
     </span>

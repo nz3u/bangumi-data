@@ -66,8 +66,8 @@ import { externalUrl } from '../lib/settings.svelte.js'
   }
 </script>
 
-<div class="grid gap-4">
-  <form class="grid gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 lg:grid-cols-3 dark:border-neutral-800 dark:bg-neutral-900/60" onsubmit={(e) => { e.preventDefault(); submit() }}>
+<div class="rise grid grid-cols-[minmax(0,1fr)] gap-4">
+  <form class="grid gap-3 card p-4 lg:grid-cols-3" onsubmit={(e) => { e.preventDefault(); submit() }}>
     <div>
       <label class="label" for="character-q">关键词</label>
       <input id="character-q" class="input" type="text" placeholder="如：五河士道" bind:value={f.q} />
@@ -92,9 +92,16 @@ import { externalUrl } from '../lib/settings.svelte.js'
   {/if}
 
   {#if loading}
-    <div class="py-8 text-center text-sm text-neutral-500">加载中…</div>
+    <div class="card p-4">
+      <div class="skeleton mb-3 h-4 w-40"></div>
+      <div class="space-y-2.5">
+        {#each Array.from({ length: 8 }) as _, i}
+          <div class="skeleton h-5" style:width="{96 - (i % 4) * 9}%"></div>
+        {/each}
+      </div>
+    </div>
   {:else if result}
-    <div class="rounded-lg border border-neutral-200 bg-white/60 dark:border-neutral-800 dark:bg-neutral-900/60">
+    <div class="card">
       <div class="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
         <Pagination total={result.total} page={result.page} size={result.size} onchange={changePage} />
       </div>
@@ -110,11 +117,11 @@ import { externalUrl } from '../lib/settings.svelte.js'
               <th>评论</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="stagger">
             {#each result.items as it (it.id)}
-              <tr class="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/50" onclick={() => openDetail('character', it.id, it)}>
+              <tr class="cursor-pointer transition-colors hover:bg-sakura-50/70 dark:hover:bg-white/[0.04]" onclick={() => openDetail('character', it.id, it)}>
                 <td class="text-neutral-500"><a href={externalUrl('character', it.id)} target="_blank" rel="noreferrer" class="hover:underline" onclick={(e) => e.stopPropagation()}>{it.id}</a></td>
-                <td class="max-w-64 truncate"><a href={externalUrl('character', it.id)} target="_blank" rel="noreferrer" class="text-sky-600 hover:underline dark:text-sky-400" onclick={(e) => e.stopPropagation()}><Highlight text={it.name} q={f.q} /></a></td>
+                <td class="max-w-64 truncate"><a href={externalUrl('character', it.id)} target="_blank" rel="noreferrer" class="text-sakura-600 hover:underline dark:text-sakura-400" onclick={(e) => e.stopPropagation()}><Highlight text={it.name} q={f.q} /></a></td>
                 <td class="max-w-52 truncate"><Highlight text={it.name_cn} q={f.q} />{#if !it.name_cn}—{/if}</td>
                 <td>{it.role_name}</td>
                 <td class="text-neutral-500 dark:text-neutral-400">{it.collects}</td>
