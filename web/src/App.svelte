@@ -132,7 +132,11 @@ import GitHub from './components/GitHub.svelte';
           style:background-position={`-${musumeN * 48}px 0`}
           aria-hidden="true"
         ></span>
-        <h1 class="min-w-0 truncate bg-gradient-to-r from-sakura-600 via-sakura-500 to-violet-500 bg-clip-text text-base font-bold tracking-tight text-transparent sm:text-lg dark:from-sakura-300 dark:via-sakura-300 dark:to-violet-300">
+        <!-- data-darkreader-ignore：Dark Reader 会剥掉渐变裁切背景导致透明字隐身，豁免后由 .brand-title 自带浅/深渐变配色 -->
+        <h1
+          class="brand-title min-w-0 truncate text-base font-bold tracking-tight sm:text-lg"
+          data-darkreader-ignore
+        >
           Bangumi 本地数据搜索
         </h1>
         {#if svc?.version}
@@ -157,7 +161,10 @@ import GitHub from './components/GitHub.svelte';
     ></span>
     <div class="flex min-w-0 flex-1 flex-col justify-between gap-1">
       <div class="flex min-w-0 items-center gap-2">
-        <h1 class="min-w-0 truncate bg-gradient-to-r from-sakura-600 via-sakura-500 to-violet-500 bg-clip-text text-base font-bold tracking-tight text-transparent dark:from-sakura-300 dark:via-sakura-300 dark:to-violet-300">
+        <h1
+          class="brand-title min-w-0 truncate text-base font-bold tracking-tight"
+          data-darkreader-ignore
+        >
           Bangumi 本地数据搜索
         </h1>
         {@render actions()}

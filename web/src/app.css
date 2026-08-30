@@ -149,6 +149,44 @@ body {
     background: url('/img/bg_musume_2x.png') 0 -12px no-repeat;
     background-size: 336px 90px;
   }
+
+  /* 品牌渐变标题。兼容性要点：
+     1. 透明填充用 -webkit-text-fill-color 而非只靠 color：
+        ::selection 可靠覆盖 text-fill-color，划选时切到实色字，避免透明字压在选区底上隐形；
+        不支持 fill-color 的引擎退化为 sakura-600 实色字（无渐变但可见）。
+     2. 标记 data-darkreader-ignore（见 App.svelte）：Dark Reader 会剥掉
+        background-clip:text 的渐变导致透明字隐身，豁免后由下方浅/深两套渐变自行配色。 */
+  .brand-title {
+    color: var(--color-sakura-600);
+    -webkit-text-fill-color: transparent;
+    background-image: linear-gradient(
+      to right,
+      var(--color-sakura-600),
+      var(--color-sakura-500),
+      var(--color-violet-500)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  .dark .brand-title {
+    color: var(--color-sakura-300);
+    background-image: linear-gradient(
+      to right,
+      var(--color-sakura-300),
+      var(--color-sakura-300),
+      var(--color-violet-300)
+    );
+  }
+  .brand-title::selection {
+    background: var(--color-sakura-600);
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+  }
+  .dark .brand-title::selection {
+    background: var(--color-sakura-300);
+    color: var(--color-neutral-900);
+    -webkit-text-fill-color: var(--color-neutral-900);
+  }
   .tbl {
     @apply w-full text-sm;
   }
