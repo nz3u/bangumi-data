@@ -21,6 +21,10 @@
   let page = $state(1)
   const size = 20
 
+  // ---- 人物简介卡片收起/展开（主要用于移动端） ----
+  const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)')
+  let asideCollapsed = $state(isMobile?.matches ?? false)
+
   // ---- 棋盘筛选状态 ----
   let currentPid = $state(null) // 当前已查询的人物 ID
   let facets = $state(null) // { self: 当前人物职位标签, other: 合作人物职位标签 }
@@ -132,6 +136,10 @@
 
   function pickPerson(p) {
     search(p.id)
+  }
+
+  function toggleAside() {
+    asideCollapsed = !asideCollapsed
   }
 
   // 跨标签页内部传参：其他页面（如人物详情抽屉）跳转过来时携带目标人物 ID。
@@ -423,7 +431,21 @@
         class:pointer-events-none={loading}
       >
       <!-- 左侧：人物简介 -->
-      <aside class="card p-4">
+      <aside class="card relative p-4 aside-collapse lg:max-h-none" class:max-h-[66.667dvh]={asideCollapsed}>
+        <button
+          class="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md border border-neutral-300 bg-white text-neutral-500 shadow-sm hover:bg-neutral-100 hover:text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+          type="button"
+          title={asideCollapsed ? '展开' : '收起'}
+          aria-label={asideCollapsed ? '展开人物简介' : '收起人物简介'}
+          onclick={toggleAside}
+        >
+          {#if asideCollapsed}
+            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 13l5 5 5-5"/><path d="M7 6l5 5 5-5"/></svg>
+          {:else}
+            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11l-5-5-5 5"/><path d="M17 18l-5-5-5 5"/></svg>
+          {/if}
+        </button>
+
         <div class="mb-3 flex flex-col items-center">
           <PersonAvatar
             pid={data.person.id}
@@ -458,18 +480,24 @@
           </div>
         </dl>
 
-        {#if (data.person.infobox ?? []).length > 0}
-          <ul class="mt-3 space-y-0.5 text-sm">
-            {#each data.person.infobox as f}
-              <li class="break-words">
-                <span class="tip mr-1 text-neutral-500 dark:text-neutral-400">{f.key}:</span>{String(f.value).replace(/\n+/g, ' / ')}
-              </li>
-            {/each}
-          </ul>
+        {#if !asideCollapsed}
+          {#if (data.person.infobox ?? []).length > 0}
+            <ul class="mt-3 space-y-0.5 text-sm">
+              {#each data.person.infobox as f}
+                <li class="break-words">
+                  <span class="tip mr-1 text-neutral-500 dark:text-neutral-400">{f.key}:</span>{String(f.value).replace(/\n+/g, ' / ')}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+
+          {#if data.person.summary}
+            <p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">{data.person.summary}</p>
+          {/if}
         {/if}
 
-        {#if data.person.summary}
-          <p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">{data.person.summary}</p>
+        {#if asideCollapsed && ((data.person.infobox ?? []).length > 0 || data.person.summary)}
+          <p class="mt-2 text-center text-xs text-neutral-400">点击右上角按钮展开详情</p>
         {/if}
       </aside>
 
