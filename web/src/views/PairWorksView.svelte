@@ -346,9 +346,9 @@
         <div class="flex flex-wrap items-center justify-center gap-4">
           {#each [data.person_a, data.person_b] as p, i}
             {#if i === 1}
-              <span class="text-xl font-bold text-neutral-400">×</span>
+              <span class="w-full text-center text-xl font-bold text-neutral-400 sm:w-auto">×</span>
             {/if}
-            <div class="flex items-center gap-3">
+            <div class="flex w-full items-center justify-center gap-3 sm:w-auto">
               <PersonAvatar
                 pid={p.id}
                 name={p.name}
@@ -366,14 +366,14 @@
               </div>
             </div>
           {/each}
-          <span class="chip ml-2">共同参与 {data.total} 条</span>
+          <span class="chip">共同参与 {data.total} 条</span>
           {#if data.items.length > 0}
             {#if filter.trim()}
-              <span class="chip ml-2 text-sakura-600 dark:text-sakura-400">命中 {filtered?.matched ?? 0} 条</span>
+              <span class="chip text-sakura-600 dark:text-sakura-400">命中 {filtered?.matched ?? 0} 条</span>
             {/if}
           {/if}
           {#if facets && (selA.length > 0 || selB.length > 0)}
-            <span class="chip ml-2 text-sakura-600 dark:text-sakura-400">
+            <span class="chip text-sakura-600 dark:text-sakura-400">
               已选 {selLabelStr(facets.self, selA)} × {selLabelStr(facets.other, selB)}
               <button class="btn-mini ml-1" type="button" onclick={clearAllTags}>重置</button>
             </span>

@@ -267,7 +267,7 @@
           </div>
         {/if}
 
-        <div class="grid min-w-0 gap-3">
+        <div class="grid grid-cols-[minmax(0,1fr)] min-w-0 gap-3">
           <!-- 窄屏回退：职位标签横向排布于列表上方（1440px 及以上改用左侧悬浮轨） -->
           {#if facets}
             <div class="grid gap-y-2 card p-3 min-[1440px]:hidden">

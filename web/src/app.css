@@ -258,3 +258,9 @@ body {
   .stagger > *:nth-child(10) { animation-delay: 360ms; }
   .stagger > *:nth-child(n + 11) { animation-delay: 400ms; }
 }
+
+/* 人物简介卡片收起/展开过渡 */
+.aside-collapse {
+  overflow-y: auto;
+  transition: max-height 0.3s ease-in-out;
+}
