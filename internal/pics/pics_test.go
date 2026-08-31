@@ -1,9 +1,14 @@
 package pics
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"bangumi-subject-go/internal/db"
 )
@@ -201,5 +206,142 @@ func TestResolveRoundTrip(t *testing.T) {
 	}
 	if !strings.HasPrefix(BuildURL(KindCharacter, "x/y.jpg", "l"), "https://lain.bgm.tv/pic/crt/l/") {
 		t.Error("character URL 前缀错误")
+	}
+}
+
+// openTestService 建立独立 bgm_pic 库并配置 API Key（测试用）。
+func openTestService(t *testing.T, key string) *Service {
+	t.Helper()
+	svc, err := Open(filepath.Join(t.TempDir(), "bgm_pic.db"), key)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	return svc
+}
+
+// fakeUpstream 本地假上游：固定状态码与响应体，计数收到的请求。
+func fakeUpstream(t *testing.T, hits *atomic.Int32, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestGetEntityPrefersNext next API 正常时直接采用，不请求 v0。
+func TestGetEntityPrefersNext(t *testing.T) {
+	var nextHits, v0Hits atomic.Int32
+	next := fakeUpstream(t, &nextHits, http.StatusOK,
+		`{"id":7,"redirect":null,"images":{"large":"https://lain.bgm.tv/pic/crt/l/a6/e8/p.jpg"}}`)
+	v0 := fakeUpstream(t, &v0Hits, http.StatusInternalServerError, "{}")
+
+	svc := openTestService(t, "test-key")
+	svc.nextHost, svc.v0Host = next.URL+"/", v0.URL+"/"
+
+	key := picKey{kind: KindPerson, id: 7}
+	if err := svc.fetch(context.Background(), kinds[KindPerson], key); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if nextHits.Load() != 1 || v0Hits.Load() != 0 {
+		t.Errorf("next/v0 请求数 = %d/%d, want 1/0", nextHits.Load(), v0Hits.Load())
+	}
+	var rel string
+	if err := svc.conn.QueryRow(`SELECT url FROM person WHERE id = 7`).Scan(&rel); err != nil || rel != "a6/e8/p.jpg" {
+		t.Errorf("next 图片未入库: rel=%q err=%v", rel, err)
+	}
+}
+
+// TestGetEntityFallbackToV0 next API 失败（如网关 504）时回退 v0 API，
+// 图片正常入库且 Resolve 状态为 ok。
+func TestGetEntityFallbackToV0(t *testing.T) {
+	var nextHits, v0Hits atomic.Int32
+	next := fakeUpstream(t, &nextHits, http.StatusGatewayTimeout, "gateway error")
+	// v0 响应结构与 next 兼容：medium 带 r/400 前缀与 ?r= 查询参数
+	v0 := fakeUpstream(t, &v0Hits, http.StatusOK,
+		`{"id":42,"images":{"medium":"https://lain.bgm.tv/r/400/pic/cover/l/b0/e3/x.jpg?r=1723962294"}}`)
+
+	svc := openTestService(t, "test-key")
+	svc.nextHost, svc.v0Host = next.URL+"/", v0.URL+"/"
+
+	key := picKey{kind: KindSubject, id: 42}
+	if err := svc.fetch(context.Background(), kinds[KindSubject], key); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if nextHits.Load() != 1 || v0Hits.Load() != 1 {
+		t.Errorf("next/v0 请求数 = %d/%d, want 1/1", nextHits.Load(), v0Hits.Load())
+	}
+	var rel string
+	if err := svc.conn.QueryRow(`SELECT url FROM subject WHERE id = 42`).Scan(&rel); err != nil || rel != "b0/e3/x.jpg" {
+		t.Errorf("v0 图片未入库: rel=%q err=%v", rel, err)
+	}
+	if st, p := svc.ResolvePath(KindSubject, 42, "m"); st != StatusOK || p != "/r/200/pic/cover/l/b0/e3/x.jpg" {
+		t.Errorf("ResolvePath = (%q,%q), want (ok,/r/200/pic/cover/l/b0/e3/x.jpg)", st, p)
+	}
+}
+
+// TestNextHangThenFallback next 挂起超过单上游 2.5s 超时后被切断，
+// 立即回退 v0 且 v0 拥有独立的完整超时预算（不受挂起挤占）。
+// next 的慢响应携带另一张图片：若客户端未及时切断而等到了它，
+// 入库的将是 next 的路径而非 v0 的路径，测试即失败——以此
+// 功能性判定代替对墙钟耗时的断言（并行测试下墙钟不可靠）。
+func TestNextHangThenFallback(t *testing.T) {
+	var v0Hits atomic.Int32
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(4 * time.Second) // 模拟故障挂起，长于单上游 2.5s 超时
+		_, _ = w.Write([]byte(`{"id":8,"images":{"large":"https://lain.bgm.tv/pic/crt/l/aa/bb/hang.jpg"}}`))
+	}))
+	t.Cleanup(next.Close)
+	v0 := fakeUpstream(t, &v0Hits, http.StatusOK,
+		`{"id":8,"images":{"large":"https://lain.bgm.tv/pic/crt/l/cc/dd/p.jpg"}}`)
+
+	svc := openTestService(t, "test-key")
+	svc.nextHost, svc.v0Host = next.URL+"/", v0.URL+"/"
+
+	key := picKey{kind: KindPerson, id: 8}
+	if err := svc.fetch(context.Background(), kinds[KindPerson], key); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if v0Hits.Load() != 1 {
+		t.Errorf("v0 请求数 = %d, want 1", v0Hits.Load())
+	}
+	var rel string
+	if err := svc.conn.QueryRow(`SELECT url FROM person WHERE id = 8`).Scan(&rel); err != nil || rel != "cc/dd/p.jpg" {
+		t.Errorf("入库的应是 v0 图片（next 挂起未被 2.5s 切断）: rel=%q err=%v", rel, err)
+	}
+}
+
+// TestFetchBothFailNotStored 双上游均失败：fetch 报错且不入库，
+// 负缓存期内 Resolve 返回 unavailable（API 层据此返回 502），
+// 过期后恢复 pending 可重新触发抓取。
+func TestFetchBothFailNotStored(t *testing.T) {
+	var nextHits, v0Hits atomic.Int32
+	next := fakeUpstream(t, &nextHits, http.StatusGatewayTimeout, "504")
+	v0 := fakeUpstream(t, &v0Hits, http.StatusServiceUnavailable, "503")
+
+	svc := openTestService(t, "test-key")
+	svc.nextHost, svc.v0Host = next.URL+"/", v0.URL+"/"
+
+	key := picKey{kind: KindSubject, id: 99}
+	if err := svc.fetch(context.Background(), kinds[KindSubject], key); err == nil {
+		t.Fatal("双上游均失败时 fetch 应返回错误")
+	}
+	// 不入库：无 URL 记录，也无空标记
+	var n int
+	if err := svc.conn.QueryRow(`SELECT COUNT(*) FROM subject WHERE id = 99`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("失败不应入库，subject 行数 = %d (err=%v)", n, err)
+	}
+	// 负缓存生效期间：unavailable
+	svc.failed.Store(key, time.Now())
+	if st, p := svc.ResolvePath(KindSubject, 99, ""); st != StatusUnavailable || p != "" {
+		t.Errorf("负缓存期内 ResolvePath = (%q,%q), want (unavailable,\"\")", st, p)
+	}
+	// 负缓存过期：重新触发抓取，状态回到 pending
+	svc.failed.Store(key, time.Now().Add(-failedTTL-time.Second))
+	if st, _ := svc.ResolvePath(KindSubject, 99, ""); st != StatusPending {
+		t.Errorf("负缓存过期后 ResolvePath = %q, want pending", st)
 	}
 }

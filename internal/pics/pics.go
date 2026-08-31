@@ -1,21 +1,34 @@
 // Package pics 图片解析服务（人物头像 / 条目封面 / 角色头像）。
 //
-// 前端首次请求某张图片时若本地未保存，则通过 next.bgm.tv 的
-// API（HTTP Bearer 鉴权，Key 存放于 data/config.json 或环境变量）
-// 异步抓取 images 中的 URL，提取其中相对路径部分（如
-// a6/e8/1_prsn_k7wpt.jpg）存入独立 SQLite 库（bgm_pic，按类型分表
-// person / subject / character），并按需拼回不同尺寸的 lain.bgm.tv
-// CDN URL 供展示。三类类型共用同一套抓取队列、并发额度与负缓存，
-// 仅上游 API 段、CDN 路径前缀与存储表不同：
+// 前端首次请求某张图片时若本地未保存，则异步抓取上游 API 响应
+// images 中的 URL，提取其中相对路径部分（如 a6/e8/1_prsn_k7wpt.jpg）
+// 存入独立 SQLite 库（bgm_pic，按类型分表 person / subject /
+// character），并按需拼回不同尺寸的 lain.bgm.tv CDN URL 供展示。
 //
-//	person    https://next.bgm.tv/p1/persons/{id}     lain /pic/crt/l/
-//	subject   https://next.bgm.tv/p1/subjects/{id}    lain /pic/cover/l/
-//	character https://next.bgm.tv/p1/characters/{id}  lain /pic/crt/l/
+// 上游按优先级依次尝试，任一成功即采用其结果：
+//  1. next API https://next.bgm.tv/p1/（首选；HTTP Bearer 鉴权，
+//     Key 存放于 data/config.json 或环境变量）
+//  2. v0 API   https://api.bgm.tv/v0/（官方公开 API，next 不可用时回退）
 //
-// Resolve 返回三种状态供前端轮询：
-//   - ok      已有可用 URL
-//   - pending 已触发后台抓取，稍后重试
-//   - failed  无法提供（未配置 Key / 上游失败进入负缓存期 / 确认无图）
+// 两类接口的 images 字段结构一致，图片提取逻辑完全相同；已合并
+// 条目 next 在 JSON 中给出 redirect 字段，v0 则返回 HTTP 302 由
+// HTTP 客户端自动跟随，最终都能取到规范条目的图片。两个上游共用
+// 同一超时设定（各 2.5s，合计最长 5s），任一失败（含超时）立即
+// 尝试另一个，均失败时不入库，仅进入失败负缓存（failedTTL），
+// 期间 /api/pics 返回 502，负缓存过期后再次轮询会重新触发抓取。
+//
+// 三类类型共用同一套抓取队列、并发额度与负缓存，仅上游 API 段、
+// CDN 路径前缀与存储表不同：
+//
+//	person    {next|v0}/persons/{id}     lain /pic/crt/l/
+//	subject   {next|v0}/subjects/{id}    lain /pic/cover/l/
+//	character {next|v0}/characters/{id}  lain /pic/crt/l/
+//
+// Resolve 返回四种状态供前端轮询：
+//   - ok          已有可用 URL
+//   - pending     已触发后台抓取，稍后重试
+//   - unavailable 上游暂时不可用（双上游均失败后的负缓存期内），可稍后重试
+//   - failed      无法提供（未配置 Key / 确认无图），前端停止轮询
 package pics
 
 import (
@@ -36,16 +49,17 @@ import (
 )
 
 const (
-	apiHost   = "https://next.bgm.tv/p1/"
-	cdnHost   = "https://lain.bgm.tv"
-	crtBase   = "/pic/crt/"   // 人物 / 角色图片路径前缀（后接尺寸字母）
-	coverBase = "/pic/cover/" // 条目封面路径前缀（后接尺寸字母）
+	nextAPIHost = "https://next.bgm.tv/p1/" // 首选上游：next API（需 Bearer Key）
+	v0APIHost   = "https://api.bgm.tv/v0/"  // 回退上游：官方 v0 API（Key 可选，附带亦有效）
+	cdnHost     = "https://lain.bgm.tv"
+	crtBase     = "/pic/crt/"   // 人物 / 角色图片路径前缀（后接尺寸字母）
+	coverBase   = "/pic/cover/" // 条目封面路径前缀（后接尺寸字母）
 
-	fetchConcurrency = 3                // 上游并发抓取上限
-	fetchTimeout     = 15 * time.Second // 单次上游请求超时
-	failedTTL        = 10 * time.Minute // 失败负缓存时长，避免轮询期间反复打上游
-	slotWait         = time.Minute      // 等待并发额度的最长时间
-	maxRedirectHops  = 5                // 合并重定向跟随上限
+	fetchConcurrency = 3                    // 上游并发抓取上限
+	fetchTimeout     = 2500 * time.Millisecond // 单个上游请求超时：next 与 v0 共用同一设定，两段合计最长 5s
+	failedTTL        = 10 * time.Minute     // 失败负缓存时长，避免轮询期间反复打上游
+	slotWait         = time.Minute          // 等待并发额度的最长时间
+	maxRedirectHops  = 5                    // 合并重定向跟随上限
 )
 
 // 受支持的图片类型（同时是 bgm_pic 库中的表名）。
@@ -55,10 +69,18 @@ const (
 	KindCharacter = "character"
 )
 
+// Resolve 系列方法返回的状态值。
+const (
+	StatusOK          = "ok"          // 已有可用 URL
+	StatusPending     = "pending"     // 已触发后台抓取，稍后重试
+	StatusUnavailable = "unavailable" // 双上游均失败的负缓存期内，可稍后重试
+	StatusFailed      = "failed"      // 终态：未配置 Key / 确认无图
+)
+
 // kindConf 单一类型的差异化配置。
 type kindConf struct {
 	table   string // 存储表名（白名单，可安全拼入 SQL）
-	apiSeg  string // next.bgm.tv API 路径段
+	apiSeg  string // 上游 API 路径段（next 与 v0 同名）
 	picBase string // lain CDN 图片路径前缀（尺寸字母之前）
 }
 
@@ -85,9 +107,11 @@ type Service struct {
 	conn     *sql.DB
 	key      string
 	http     *http.Client
-	sem      chan struct{} // 并发额度
-	inflight sync.Map      // picKey -> struct{}，去重进行中的抓取
-	failed   sync.Map      // picKey -> time.Time，失败负缓存
+	nextHost string // 首选上游根地址（测试可注入本地服务）
+	v0Host   string // 回退上游根地址（测试可注入本地服务）
+	sem      chan struct{}  // 并发额度
+	inflight sync.Map       // picKey -> struct{}，去重进行中的抓取
+	failed   sync.Map       // picKey -> time.Time，失败负缓存
 	stopCh   chan struct{}  // 停止后台清理协程
 }
 
@@ -110,11 +134,13 @@ func Open(path, apiKey string) (*Service, error) {
 	}
 	stopCh := make(chan struct{})
 	svc := &Service{
-		conn:   conn,
-		key:    apiKey,
-		http:   &http.Client{Timeout: fetchTimeout},
-		sem:    make(chan struct{}, fetchConcurrency),
-		stopCh: stopCh,
+		conn:     conn,
+		key:      apiKey,
+		http:     &http.Client{Timeout: fetchTimeout},
+		nextHost: nextAPIHost,
+		v0Host:   v0APIHost,
+		sem:      make(chan struct{}, fetchConcurrency),
+		stopCh:   stopCh,
 	}
 	go svc.cleanupLoop(stopCh)
 	return svc, nil
@@ -177,30 +203,30 @@ func (s *Service) ResolvePath(kind string, id int64, size string) (status, path 
 func (s *Service) resolveRel(kind string, id int64) (status, rel string) {
 	conf, ok := kinds[kind]
 	if !ok {
-		return "failed", ""
+		return StatusFailed, ""
 	}
 	key := picKey{kind: kind, id: id}
 	var stored string
 	err := s.conn.QueryRow(`SELECT url FROM `+conf.table+` WHERE id = ?`, id).Scan(&stored)
 	switch {
 	case err == nil && stored != "":
-		return "ok", stored
+		return StatusOK, stored
 	case err == nil:
-		return "failed", "" // 已确认无图片（空标记），无需再抓
+		return StatusFailed, "" // 已确认无图片（空标记），无需再抓
 	case !errors.Is(err, sql.ErrNoRows):
 		log.Printf("pics: 查询 %s %d 图片: %v", kind, id, err)
 	}
 	if s.key == "" {
-		return "failed", ""
+		return StatusFailed, ""
 	}
 	if t, ok := s.failed.Load(key); ok {
 		if time.Since(t.(time.Time)) < failedTTL {
-			return "failed", ""
+			return StatusUnavailable, "" // 双上游均失败后的负缓存期内
 		}
 		s.failed.Delete(key)
 	}
 	s.scheduleFetch(conf, key)
-	return "pending", ""
+	return StatusPending, ""
 }
 
 // scheduleFetch 异步抓取（同一 类型+id 去重，受并发额度限制）。
@@ -216,20 +242,19 @@ func (s *Service) scheduleFetch(conf kindConf, key picKey) {
 		case <-time.After(slotWait):
 			return // 等不到额度则放弃，前端下次轮询会再次触发
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		if err := s.fetch(ctx, conf, key); err != nil {
+		// 超时预算由 getEntity 内部统一控制（next / v0 共用 5s）。
+		if err := s.fetch(context.Background(), conf, key); err != nil {
 			s.failed.Store(key, time.Now())
 			log.Printf("pics: 抓取 %s %d 图片失败: %v", key.kind, key.id, err)
 		}
 	}()
 }
 
-// apiEntity next.bgm.tv 响应中本服务关心的字段
-// （person / subject / character 三类响应结构兼容）。
+// apiEntity 上游 API 响应中本服务关心的字段
+// （next 与 v0 的 person / subject / character 响应结构兼容）。
 type apiEntity struct {
 	ID       int64 `json:"id"`
-	Redirect int64 `json:"redirect"` // 条目被合并时指向规范 ID
+	Redirect int64 `json:"redirect"` // next API：条目被合并时指向规范 ID（v0 经 HTTP 302 自动跟随，无此字段）
 	Images   struct {
 		Large  string `json:"large"`
 		Common string `json:"common"`
@@ -251,7 +276,8 @@ func (e *apiEntity) firstImageURL(picBase string) string {
 
 // fetch 抓取并保存图片相对路径。
 // 兼容两类特殊情况：
-//   - redirect 非零：已合并到其他 ID，跟随重定向取规范条目的图片；
+//   - redirect 非零（next）：已合并到其他 ID，跟随重定向取规范条目的图片；
+//     v0 对已合并条目直接返回 HTTP 302，由 HTTP 客户端自动跟随；
 //   - 无任何可用 image 且无重定向：确实没有图片，写入空标记，
 //     之后 Resolve 直接返回 failed，不再重复请求上游。
 func (s *Service) fetch(ctx context.Context, conf kindConf, key picKey) error {
@@ -278,9 +304,32 @@ func (s *Service) fetch(ctx context.Context, conf kindConf, key picKey) error {
 	return fmt.Errorf("%s %d 重定向层级超过上限", conf.table, key.id)
 }
 
+// getEntity 优先请求 next API，失败（网络错误 / 超时 / 429 / 5xx / 404 等）
+// 时立即请求官方 v0 API，任一成功即返回。两类接口的 images 字段结构
+// 一致，后续图片提取逻辑完全相同。
+// 两个上游共用同一超时设定（fetchTimeout，各 2.5s、合计最长 5s）：
+// 上游及时返回失败状态则立刻切换下一个；未及时返回则超时后切换，
+// 保证 next 故障时 v0 始终能获得完整的超时预算。
 func (s *Service) getEntity(ctx context.Context, conf kindConf, id int64) (*apiEntity, error) {
+	body, nextErr := s.tryEntity(ctx, s.nextHost, conf.apiSeg, id)
+	if nextErr == nil {
+		return body, nil
+	}
+	log.Printf("pics: next API 获取 %s %d 失败: %v，回退 v0 API", conf.table, id, nextErr)
+	body, v0Err := s.tryEntity(ctx, s.v0Host, conf.apiSeg, id)
+	if v0Err == nil {
+		return body, nil
+	}
+	return nil, fmt.Errorf("next 与 v0 API 均失败（next: %v；v0: %w）", nextErr, v0Err)
+}
+
+// tryEntity 请求单个上游 API 并解析响应；每个上游独立受 fetchTimeout
+// 约束，超时即返回错误，由调用方立刻切换下一个上游。
+func (s *Service) tryEntity(ctx context.Context, host, seg string, id int64) (*apiEntity, error) {
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		apiHost+conf.apiSeg+"/"+strconv.FormatInt(id, 10), nil)
+		host+seg+"/"+strconv.FormatInt(id, 10), nil)
 	if err != nil {
 		return nil, err
 	}
