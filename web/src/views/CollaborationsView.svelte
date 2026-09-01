@@ -8,7 +8,7 @@
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
   import PersonAvatar from '../components/PersonAvatar.svelte'
-  import { onNavParams } from '../lib/nav.js'
+  import { onNavParams, goToTab } from '../lib/nav.js'
   import { openDetail } from '../lib/detail.svelte.js'
 
   const BASE = '/collaborations'
@@ -450,9 +450,10 @@
           <PersonAvatar
             pid={data.person.id}
             name={data.person.name}
-            class="size-32 rounded-lg bg-neutral-200 text-4xl font-bold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+            onclick={() => openDetail('person', data.person.id, data.person)}
+            class="size-32 rounded-lg bg-neutral-200 text-4xl font-bold text-neutral-500 hover:cursor-pointer dark:bg-neutral-800 dark:text-neutral-400"
           />
-          <h2 class="mt-2 text-lg font-bold">{data.person.name}</h2>
+          <button type="button" class="mt-2 text-lg font-bold  hover:cursor-pointer" onclick={() => openDetail('person', data.person.id, data.person)}>{data.person.name}</button>
           <div class="mt-1 flex flex-wrap justify-center gap-1">
             <span class="chip">{data.person.type_name}</span>
             {#each data.person.career ?? [] as cb}
@@ -664,9 +665,10 @@
                     pid={col.person_id}
                     name={col.name}
                     size="grid"
-                    class="size-14 rounded-full bg-sakura-100 text-xl font-bold text-sakura-700 hover:bg-sakura-200 dark:bg-sakura-950 dark:text-sakura-300 dark:hover:bg-sakura-900"
-                    title="查看该人物的 collaborations"
+                    class="size-14 rounded-full hover:cursor-pointer bg-sakura-100 text-xl font-bold text-sakura-700 hover:bg-sakura-200 dark:bg-sakura-950 dark:text-sakura-300 dark:hover:bg-sakura-900"
+                    title="左键单击查看该人物的 合作人物，右键单击查看该人物与当前人物的 合作作品"
                     onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
+                    oncontextmenu={(e) => { e.preventDefault(); goToTab('/pairworks', { a:data.person.id, b:col.person_id, aName:data.person.name, bName:col.name }) }}
                   />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
