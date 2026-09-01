@@ -14,7 +14,8 @@
     class: cls = 'size-14',
     size = 'g',
     title = '',
-    onclick = null
+    onclick = null,
+    oncontextmenu = null
   } = $props()
 
   let el = $state(null)
@@ -95,7 +96,7 @@
 
 <div class="relative w-fit shrink-0">
   {#if onclick}
-    <button bind:this={el} type="button" class={`relative block overflow-hidden ${cls}`} {title} {onclick}>
+    <button bind:this={el} type="button" class={`relative block overflow-hidden ${cls}`} {title} {onclick} {oncontextmenu}>
       {@render inner()}
     </button>
   {:else}
