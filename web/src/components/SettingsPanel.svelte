@@ -1,39 +1,58 @@
 ﻿<script>
   // 站点设置面板：齿轮按钮 + 下拉面板。
-  // 目前提供「外部链接」配置：下拉选择镜像站（bgm.tv / bangumi.tv / chii.in），
-  // 选「自定义…」时出现输入框；所有改动实时写入 localStorage 并全局生效。
+  // 面板内所有设置项统一为「标签 → 控件 → 说明」三层结构：
+  //   · 外部链接 / 图片接口：预设下拉 + 自定义输入的内联组合控件（HostField）
+  //   · 高亮功能：一行总开关（统一开关）+ 四项独立开关
+  //   · 高亮颜色：三张色卡单选，选中「自定义」时展开取色器；
+  //     四项高亮全部关闭时整块隐藏（无高亮可着色）。
+  // 所有改动实时写入 localStorage 并全局生效。
   import { onMount } from 'svelte'
   import { fly, fade } from 'svelte/transition'
+  import HostField from './HostField.svelte'
   import {
     settings,
     saveSettings,
     EXTERNAL_HOST_PRESETS,
     PIC_HOST_PRESETS,
-    HIGHLIGHT_AREA_PRESETS,
-    sanitizeHost,
-    externalHost,
-    picHost,
-    isSearchHighlight,
+    HIGHLIGHT_FEATURE_PRESETS,
+    isHighlightOn,
+    isAnyHighlightOn,
+    highlightOnCount,
+    toggleHighlightFeature,
+    setAllHighlight,
     HIGHLIGHT_COLOR_PRESETS,
+    DEFAULT_HIGHLIGHT_COLOR_CUSTOM,
     highlightHex
   } from '../lib/settings.svelte.js'
 
   let open = $state(false)
   let root = $state(null)
 
-  const customValid = $derived(
-    settings.externalHost !== 'custom' || sanitizeHost(settings.externalHostCustom) !== ''
-  )
-  const picValid = $derived(
-    settings.picHost !== 'custom' || sanitizeHost(settings.picHostCustom) !== ''
-  )
-  const hostNow = $derived(externalHost())
-  const picNow = $derived(picHost())
-  const searchHi = $derived(isSearchHighlight())
+  // 高亮总开关状态：全开 / 部分开启（中间态）/ 全关
+  const hiCount = $derived(highlightOnCount())
+  const allHi = $derived(hiCount === HIGHLIGHT_FEATURE_PRESETS.length)
+  const anyHi = $derived(isAnyHighlightOn())
 
-  function toggleSearchHighlight() {
-    settings.searchHighlight = !isSearchHighlight()
-    saveSettings()
+  // 自定义色卡的展示色：始终显示用户已选的自定义色（而非当前生效色），
+  // 非法值时回退默认，保证色卡在未选中时也反映真实配置。
+  const customHex = $derived(
+    /^#[0-9a-fA-F]{6}$/.test(settings.highlightColorCustom ?? '')
+      ? settings.highlightColorCustom
+      : DEFAULT_HIGHLIGHT_COLOR_CUSTOM
+  )
+
+  // 色卡预览区上的文字色：按相对亮度在深/浅之间切换，
+  // 避免自定义深色时预览文字与背景糊在一起。
+  function textOn(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? '').trim())
+    if (!m) return '#3f3f46'
+    const n = parseInt(m[1], 16)
+    const lin = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+      const c = v / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    const l = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    return l > 0.45 ? '#3f3f46' : '#fafafa'
   }
 
   function toggle() {
@@ -42,18 +61,6 @@
 
   function close() {
     open = false
-  }
-
-  function toggleHighlightArea(area) {
-    const areas = Array.isArray(settings.highlightAreas) ? [...settings.highlightAreas] : []
-    const idx = areas.indexOf(area)
-    if (idx >= 0) {
-      areas.splice(idx, 1)
-    } else {
-      areas.push(area)
-    }
-    settings.highlightAreas = areas
-    saveSettings()
   }
 
   onMount(() => {
@@ -125,151 +132,160 @@
   {/if}
 </div>
 
+<!-- 通用开关行：左侧文案 + 右侧滑块；mixed 表示「部分开启」中间态 -->
+{#snippet switchRow({ id, label, hint = '', on = false, mixed = false, onToggle, head = false, sub = false })}
+  <div class={`flex items-center justify-between gap-3 ${head ? 'mb-1' : ''}`}>
+    <span
+      class={`min-w-0 truncate ${
+        head
+          ? 'text-xs text-neutral-500 dark:text-neutral-400'
+          : `text-[13px] text-neutral-600 dark:text-neutral-400${sub ? ' pl-1' : ''}`
+      }`}
+      id={`${id}-label`}
+    >{label}</span>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={mixed ? 'mixed' : on ? 'true' : 'false'}
+      aria-labelledby={`${id}-label`}
+      title={hint || label}
+      class={`relative inline-flex h-4.5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${mixed ? 'bg-sakura-600/45' : on ? 'bg-sakura-600' : 'bg-neutral-300 dark:bg-neutral-700'}`}
+      onclick={onToggle}
+    >
+      <span
+        class={`inline-block size-3.5 transform rounded-full bg-white shadow transition-transform duration-150 ${on ? 'translate-x-[1.15rem]' : mixed ? 'translate-x-[0.72rem]' : 'translate-x-0.5'}`}
+      ></span>
+    </button>
+  </div>
+{/snippet}
+
+<!-- 高亮颜色色卡：上半为配色预览（带下划线示意着重线），下半为名称 -->
+{#snippet colorCard(p)}
+  {@const hex = p.value === 'custom' ? customHex : p.hex}
+  {@const picked = settings.highlightColor === p.value}
+  <label
+    class={`flex cursor-pointer flex-col overflow-hidden rounded-lg border transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sakura-500/30 ${
+      picked
+        ? 'border-sakura-500 ring-2 ring-sakura-500/20 dark:border-sakura-400'
+        : 'border-neutral-300/80 hover:border-neutral-400 dark:border-white/[0.09] dark:hover:border-white/20'
+    }`}
+  >
+    <input
+      type="radio"
+      name="hl-color"
+      class="sr-only"
+      value={p.value}
+      bind:group={settings.highlightColor}
+      onchange={saveSettings}
+    />
+    <span
+      class="flex h-8 items-center justify-center text-[13px] underline decoration-2 underline-offset-2"
+      style:background={hex}
+      style:color={textOn(hex)}
+    >示例</span>
+    <span
+      class={`border-t px-1 py-1 text-center text-[11px] ${
+        picked
+          ? 'border-sakura-500/40 text-sakura-600 dark:border-sakura-400/40 dark:text-sakura-400'
+          : 'border-neutral-200/80 text-neutral-500 dark:border-white/[0.07] dark:text-neutral-400'
+      }`}
+    >{p.value === 'custom' ? '自定义' : p.label}</span>
+  </label>
+{/snippet}
+
 {#snippet settingsContent()}
   <h3 class="mb-3 font-medium md:block hidden">设置</h3>
 
   <!-- 外部链接 -->
-  <label class="label" for="ext-host">外部链接</label>
-  <select
+  <HostField
     id="ext-host"
-    class="input"
+    label="外部链接"
+    presets={EXTERNAL_HOST_PRESETS}
     bind:value={settings.externalHost}
-    onchange={saveSettings}
-  >
-    {#each EXTERNAL_HOST_PRESETS as p}
-      <option value={p.value}>{p.label}</option>
-    {/each}
-  </select>
-
-  {#if settings.externalHost === 'custom'}
-    <input
-      class={`input mt-2 ${settings.externalHostCustom && !customValid ? 'border-red-400 focus:border-red-500' : ''}`}
-      type="text"
-      placeholder="如 mirror.example.com"
-      spellcheck="false"
-      bind:value={settings.externalHostCustom}
-      oninput={saveSettings}
-    />
-    {#if !customValid}
-      <p class="mt-1 text-[11px] text-red-500">主机名无效，跳转将回退为 bgm.tv</p>
-    {/if}
-  {/if}
-
-  <p class="mt-2 text-[11px] leading-relaxed text-neutral-400">
-    条目/人物/角色的外链将跳转到
-    <span class="font-medium text-neutral-500 dark:text-neutral-300">{hostNow}</span>。
-  </p>
+    bind:customValue={settings.externalHostCustom}
+    placeholder="如 mirror.example.com"
+    fallback="bgm.tv"
+    hintBefore="条目/人物/角色的外链将跳转到 "
+    hintAfter="。配置实时保存在浏览器本地。"
+    onsave={saveSettings}
+  />
 
   <!-- 图片接口 -->
-  <label class="label mt-4" for="pic-host">图片接口</label>
-  <select
-    id="pic-host"
-    class="input"
-    bind:value={settings.picHost}
-    onchange={saveSettings}
-  >
-    {#each PIC_HOST_PRESETS as p}
-      <option value={p.value}>{p.label}</option>
-    {/each}
-  </select>
-
-  {#if settings.picHost === 'custom'}
-    <input
-      class={`input mt-2 ${settings.picHostCustom && !picValid ? 'border-red-400 focus:border-red-500' : ''}`}
-      type="text"
+  <div class="mt-4">
+    <HostField
+      id="pic-host"
+      label="图片接口"
+      presets={PIC_HOST_PRESETS}
+      bind:value={settings.picHost}
+      bind:customValue={settings.picHostCustom}
       placeholder="如 cdn.example.com"
-      spellcheck="false"
-      bind:value={settings.picHostCustom}
-      oninput={saveSettings}
+      fallback="lain.bgm.tv"
+      hintBefore="人物头像 / 条目封面 / 角色头像将拼接自 "
+      hintAfter="。"
+      onsave={saveSettings}
     />
-    {#if !picValid}
-      <p class="mt-1 text-[11px] text-red-500">主机名无效，图片将回退为 lain.bgm.tv</p>
-    {/if}
-  {/if}
+  </div>
 
+  <!-- 高亮功能：首行总开关统一控制，随后四项各自独立 -->
+  <div class="mt-4">
+    {@render switchRow({
+      id: 'hl-all',
+      label: '全部高亮',
+      hint: '统一开启 / 关闭全部高亮',
+      on: allHi,
+      mixed: anyHi && !allHi,
+      onToggle: () => setAllHighlight(!allHi),
+      head: true
+    })}
+    <div class="space-y-1.5">
+      {#each HIGHLIGHT_FEATURE_PRESETS as f (f.value)}
+        {@render switchRow({
+          id: `hl-${f.value}`,
+          label: f.label,
+          hint: f.hint,
+          on: isHighlightOn(f.value),
+          onToggle: () => toggleHighlightFeature(f.value),
+          sub: true
+        })}
+      {/each}
+    </div>
+  </div>
   <p class="mt-2 text-[11px] leading-relaxed text-neutral-400">
-    人物头像 / 条目封面 / 角色头像将拼接自
-    <span class="font-medium text-neutral-500 dark:text-neutral-300">{picNow}</span>；
-    配置实时保存在浏览器本地。
+    已开启 {hiCount}/{HIGHLIGHT_FEATURE_PRESETS.length} 项；总开关统一控制，单项可独立调整。
   </p>
 
-  <!-- 高亮区域 -->
-  <span class="label mt-4">条目页高亮区域</span>
-  <div class="flex flex-wrap gap-3">
-    {#each HIGHLIGHT_AREA_PRESETS as area}
-      <label class="flex items-center gap-1.5 text-sm">
-        <input
-          type="checkbox"
-          class="size-3.5 rounded border-neutral-300 text-sakura-600 focus:ring-sakura-500 dark:border-neutral-600"
-          checked={settings.highlightAreas?.includes(area.value)}
-          onchange={() => toggleHighlightArea(area.value)}
-        />
-        {area.label}
-      </label>
-    {/each}
-  </div>
-  <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
-    选择搜索结果中需要高亮的区域；配置实时保存在浏览器本地。
-  </p>
+  <!-- 高亮颜色：全部高亮关闭时无需设置，整块隐藏 -->
+  {#if anyHi}
+    <div transition:fade={{ duration: 120 }}>
+      <span class="label mt-4">高亮颜色</span>
+      <div class="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="高亮颜色">
+        {#each HIGHLIGHT_COLOR_PRESETS as p (p.value)}
+          {@render colorCard(p)}
+        {/each}
+      </div>
 
-  <!-- 搜索高亮开关（短滑块） -->
-  <div class="mt-4 flex items-center justify-between gap-2">
-    <span class="text-sm" id="search-hl-label">搜索建议高亮</span>
-    <button
-      type="button"
-      role="switch"
-      aria-checked={searchHi}
-      aria-labelledby="search-hl-label"
-      title="搜索建议与搜索结果中高亮命中关键词"
-      class={`relative inline-flex h-4.5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${searchHi ? 'bg-sakura-600' : 'bg-neutral-300 dark:bg-neutral-700'}`}
-      onclick={toggleSearchHighlight}
-    >
-      <span
-        class={`inline-block size-3.5 transform rounded-full bg-white shadow transition-transform duration-150 ${searchHi ? 'translate-x-[1.15rem]' : 'translate-x-0.5'}`}
-      ></span>
-    </button>
-  </div>
-  <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
-    人物检索推荐、人物/角色搜索结果中高亮命中关键词；配置实时保存在浏览器本地。
-  </p>
-
-  <!-- 高亮颜色：预设单选 + 自定义颜色，示例文字实时预览高亮效果 -->
-  <span class="label mt-4">高亮颜色</span>
-  <div class="flex flex-col gap-1.5" role="radiogroup" aria-label="高亮颜色">
-    {#each HIGHLIGHT_COLOR_PRESETS as p (p.value)}
-      <label class="flex min-w-0 items-center gap-2 text-sm">
-        <input
-          type="radio"
-          name="hl-color"
-          class="size-3.5 border-neutral-300 text-sakura-600 focus:ring-sakura-500 dark:border-neutral-600"
-          value={p.value}
-          bind:group={settings.highlightColor}
-          onchange={saveSettings}
-        />
-        {#if p.value === 'custom'}
-          <span class="shrink-0">{p.label}</span>
+      {#if settings.highlightColor === 'custom'}
+        <div
+          class="mt-1.5 flex items-center gap-2 rounded-lg border border-neutral-300/80 bg-white px-2 py-1.5 dark:border-white/[0.09] dark:bg-white/[0.04]"
+          transition:fade={{ duration: 120 }}
+        >
           <input
             type="color"
-            class="h-6 w-9 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0.5 dark:border-neutral-600"
+            class="h-6 w-8 shrink-0 cursor-pointer rounded border border-neutral-300 bg-transparent p-0.5 dark:border-neutral-600"
             title="自定义高亮颜色"
             bind:value={settings.highlightColorCustom}
             oninput={saveSettings}
           />
+          <code class="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">{highlightHex()}</code>
           <mark
-            class="min-w-0 truncate text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) bg-(--hl) dark:bg-transparent dark:decoration-amber-100"
+            class="ml-auto min-w-0 truncate text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) bg-(--hl) dark:bg-transparent dark:decoration-amber-100"
             style:--hl={highlightHex()}
-          >高亮效果示例</mark>
-        {:else}
-          <mark
-            class="min-w-0 truncate text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) bg-(--hl) dark:bg-transparent dark:decoration-amber-100"
-            style:--hl={p.hex}
-          >高亮效果示例</mark>
-          <span class="shrink-0 text-[11px] text-neutral-400">{p.label}</span>
-        {/if}
-      </label>
-    {/each}
-  </div>
-  <p class="mt-1 text-[11px] leading-relaxed text-neutral-400">
-    浅色模式下背景与着重线同色；深色模式背景透明、仅保留着重线。配置实时保存在浏览器本地。
-  </p>
+          >高亮效果</mark>
+        </div>
+      {/if}
+    </div>
+    <p class="mt-2 text-[11px] leading-relaxed text-neutral-400">
+      浅色模式下背景与着重线同色；深色模式背景透明、仅保留着重线。
+    </p>
+  {/if}
 {/snippet}

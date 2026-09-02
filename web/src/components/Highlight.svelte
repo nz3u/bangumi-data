@@ -4,8 +4,10 @@
   // 颜色来自站点设置的「高亮颜色」（settings.highlightColor，CSS 变量传入，
   // Tailwind 任意值类是构建期编译的，运行时颜色只能走变量）：
   //   浅色模式 bg 与着重线同色；深色模式背景透明、仅保留琥珀色线。
-  // 「搜索建议高亮」开关（settings.searchHighlight）也在此统一管理：
-  //   关闭时命中片段按普通文本输出，各调用方（建议列表、搜索结果表）无需各自判断。
+  // 各高亮功能的独立开关（settings.highlightFeatures）也在此统一管理：
+  //   scope 指定本组件属于哪一项功能（suggest | filter | title | tags），
+  //   关闭时命中片段按普通文本输出，各调用方（建议列表、筛选结果、搜索结果表）
+  //   无需各自判断，只管声明自己属于哪个功能即可。
   // 匹配语义与各页快速筛选一致：
   //   1. 字面子串（不区分大小写，同后端 LIKE / FTS 短语）；
   //   2. 字面未命中时回退拼音全拼/首字母匹配（pinyin-match 返回命中下标区间，
@@ -13,9 +15,10 @@
   //      区间内含非汉字字符时视为伪命中拒绝（避免标点等被误标）。
   // 关键词为空时原样输出；标签等非关键词筛选不传入 q 即不会高亮。
   import PinyinMatch from 'pinyin-match'
-  import { highlightHex, isSearchHighlight } from '../lib/settings.svelte.js'
+  import { highlightHex, isHighlightOn } from '../lib/settings.svelte.js'
 
-  let { text = '', q = '' } = $props()
+  // scope：本组件归属的高亮功能，对应设置面板里的四个独立开关之一
+  let { text = '', q = '', scope = 'suggest' } = $props()
 
   const MARK =
     'text-inherit underline decoration-2 underline-offset-2 decoration-(--hl) dark:decoration-amber-100 bg-(--hl) dark:bg-transparent'
@@ -23,7 +26,8 @@
   const parts = $derived.by(() => {
     const s = String(text ?? '')
     const kw = String(q ?? '').trim()
-    if (!s || !kw) return s ? [{ t: s, m: false }] : []
+    // 关键词为空或本项高亮关闭：整段按普通文本输出，不做任何匹配计算
+    if (!s || !kw || !isHighlightOn(scope)) return s ? [{ t: s, m: false }] : []
 
     // 1. 字面子串（全部出现位置）
     const hay = s.toLowerCase()
@@ -64,5 +68,5 @@
   })
 </script>
 
-{#each parts as p}{#if p.m && isSearchHighlight()}<mark class={MARK} style:--hl={highlightHex()}>{p.t}</mark>{:else}{p.t}{/if}{/each}
+{#each parts as p}{#if p.m}<mark class={MARK} style:--hl={highlightHex()}>{p.t}</mark>{:else}{p.t}{/if}{/each}
 
