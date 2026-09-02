@@ -17,14 +17,17 @@ import (
 	"log"
 	"strings"
 
+	"bangumi-subject-go/internal/norm"
 	"bangumi-subject-go/internal/wiki"
 )
 
 const nameCNBackfillDone = "name_cn_backfilled"
+const subjectSearchBuilt = "subject_search_built"
 const tagStatsBuilt = "tag_stats_built"
 const tagMapsBuilt = "tag_maps_built"
 
 // UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS
+// -> 补建条目检索列（aliases/search_norm）并重建条目 FTS
 // -> 构建标签/元标签聚合表。
 // 新导入的库各步骤均检测为已完成，直接返回（仅两次 pragma/master 查询开销）。
 func UpgradeSchema(conn *sql.DB) error {
@@ -95,7 +98,59 @@ func UpgradeSchema(conn *sql.DB) error {
 		log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
 	}
 
-	// 4. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
+	// 4. 条目检索列与条目 FTS：
+	//    subjects 原本只按 name / name_cn 建 trigram 索引，存在两类漏召回——
+	//    检索词被原名中的符号切断（「少女歌剧」匹配不到「少女☆歌剧」）、
+	//    检索词只出现在 infobox 的别名里（「Kaguya Hime」）。
+	//    改为补建 aliases（infobox 别名）与 search_norm（归一化后的可搜索文本），
+	//    并把 subjects_fts 重建为只索引 search_norm 的单列表。
+	//    68 万行一次性回填约需数十秒，完成后置标记跳过。
+	added := false
+	for _, col := range []string{"aliases", "search_norm"} {
+		has, err := tableHasColumn(conn, "subjects", col)
+		if err != nil {
+			return fmt.Errorf("检查 subjects.%s: %w", col, err)
+		}
+		if !has {
+			if _, err := conn.Exec(fmt.Sprintf(`ALTER TABLE subjects ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)); err != nil {
+				return fmt.Errorf("补建 subjects.%s: %w", col, err)
+			}
+			log.Printf("已为 subjects 补建 %s 列", col)
+			added = true
+		}
+	}
+	searchDone, err := metaGet(conn, subjectSearchBuilt)
+	if err != nil {
+		return err
+	}
+	if added || searchDone != "1" {
+		n, err := backfillSubjectSearch(conn)
+		if err != nil {
+			return fmt.Errorf("回填 subjects 检索列: %w", err)
+		}
+		log.Printf("已从 infobox 回填 subjects.aliases/search_norm %d 行（耗时一次性，之后跳过）", n)
+		if err := metaSet(conn, subjectSearchBuilt, "1"); err != nil {
+			return err
+		}
+	}
+	hasNormFTS, err := ftsHasColumn(conn, "subjects_fts", "search_norm")
+	if err != nil {
+		return fmt.Errorf("检查 subjects_fts 结构: %w", err)
+	}
+	if !hasNormFTS {
+		if err := ExecMulti(conn, `DROP TABLE IF EXISTS subjects_fts;`); err != nil {
+			return err
+		}
+		if err := ExecMulti(conn, ftsSubjectSQL); err != nil {
+			return err
+		}
+		if err := ExecMulti(conn, ftsSubjectPopulateSQL); err != nil {
+			return err
+		}
+		log.Println("已重建 subjects_fts（单列 search_norm）")
+	}
+
+	// 5. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
 	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开构建（新导入的库
 	//    由 FinalizeSchema 构建并置标记，此处直接跳过）。
 	//    聚合表与映射表使用独立标记：已发布版本只置过 tag_stats_built，
@@ -220,6 +275,80 @@ func buildTagDerivedTables(conn *sql.DB) (int64, int64, error) {
 		return 0, 0, err
 	}
 	return nAgg, nMap, nil
+}
+
+// backfillSubjectSearch 全表扫描 search_norm 为空的行，解析 infobox 抽取别名，
+// 并与 name / name_cn 一起算出归一化检索串后批量更新。
+// 先收集再写回，避免读游标与批量更新争抢连接（同 backfillNameCN）。
+func backfillSubjectSearch(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`SELECT id, name, name_cn, infobox FROM subjects WHERE search_norm = ''`)
+	if err != nil {
+		return 0, err
+	}
+	type searchRow struct {
+		id      int64
+		aliases string
+		norm    string
+	}
+	updates := make([]searchRow, 0, 4096)
+	scanned := 0
+	for rows.Next() {
+		var (
+			id      int64
+			name    string
+			nameCN  string
+			infobox string
+		)
+		if err := rows.Scan(&id, &name, &nameCN, &infobox); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		scanned++
+		if scanned%200000 == 0 {
+			log.Printf("回填 subjects 检索列：已扫描 %d 行…", scanned)
+		}
+		aliases := wiki.ExtractAliasesText(infobox)
+		updates = append(updates, searchRow{id: id, aliases: aliases, norm: norm.Join(name, nameCN, aliases)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	const batch = 20000
+	applied := 0
+	for start := 0; start < len(updates); start += batch {
+		end := start + batch
+		if end > len(updates) {
+			end = len(updates)
+		}
+		tx, err := conn.Begin()
+		if err != nil {
+			return int64(applied), err
+		}
+		stmt, err := tx.Prepare(`UPDATE subjects SET aliases = ?, search_norm = ? WHERE id = ?`)
+		if err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		for _, u := range updates[start:end] {
+			if _, err := stmt.Exec(u.aliases, u.norm, u.id); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return int64(applied), err
+			}
+		}
+		if err := stmt.Close(); err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		if err := tx.Commit(); err != nil {
+			return int64(applied), err
+		}
+		applied = end
+	}
+	return int64(len(updates)), nil
 }
 
 // backfillNameCN 全表扫描 name_cn 为空的行，解析 infobox 提取「简体中文名」后批量更新。

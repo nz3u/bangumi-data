@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS subjects (
     type          INTEGER NOT NULL,
     name          TEXT    NOT NULL,
     name_cn       TEXT    NOT NULL DEFAULT '',
+    aliases       TEXT    NOT NULL DEFAULT '',
+    search_norm   TEXT    NOT NULL DEFAULT '',
     infobox       TEXT    NOT NULL DEFAULT '',
     platform      INTEGER NOT NULL DEFAULT 0,
     summary       TEXT    NOT NULL DEFAULT '',
@@ -203,9 +205,13 @@ CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, p
 
 // ftsSQL 全文搜索虚拟表。trigram tokenizer 支持中文子串匹配（>=3 字符走索引）。
 // 人物/角色的 name_cn 为 infobox 中提取的简体中文名。
+//
+// 条目表只索引 search_norm 一列：它是 name + name_cn + aliases 经 norm.Fold
+// 归一化后的串，索引与查询同口径，因此能命中"被符号切断"（少女歌剧 -> 少女☆歌剧）
+// 与"只在别名中出现"（Kaguya Hime）的写法。单列也让索引体积与两列原文相当。
 const ftsSQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS subjects_fts
-    USING fts5(name, name_cn, tokenize = 'trigram');
+    USING fts5(search_norm, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
@@ -215,7 +221,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
 // ftsPopulateSQL 集合式填充 FTS：单条 INSERT...SELECT 在 SQLite 内部完成，
 // 避免 Go 侧逐行 Exec 的开销与 trigram 分词的往返成本。
 const ftsPopulateSQL = `
-INSERT INTO subjects_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM subjects;
+INSERT INTO subjects_fts(rowid, search_norm) SELECT id, search_norm FROM subjects;
 INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
 INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
 `
@@ -232,6 +238,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
+`
+
+// ftsSubjectSQL 仅条目 FTS 的建表语句（升级迁移用）。
+const ftsSubjectSQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS subjects_fts
+    USING fts5(search_norm, tokenize = 'trigram');
+`
+
+// ftsSubjectPopulateSQL 仅重建条目 FTS 时的填充语句（升级迁移用）。
+const ftsSubjectPopulateSQL = `
+INSERT INTO subjects_fts(rowid, search_norm) SELECT id, search_norm FROM subjects;
 `
 
 // DropAll 删除全部业务表（全量重建导入时调用）。

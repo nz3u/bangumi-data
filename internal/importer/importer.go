@@ -25,6 +25,7 @@ import (
 	"bangumi-subject-go/internal/common"
 	"bangumi-subject-go/internal/db"
 	"bangumi-subject-go/internal/model"
+	"bangumi-subject-go/internal/norm"
 	"bangumi-subject-go/internal/wiki"
 )
 
@@ -214,10 +215,12 @@ func (z *zipReadCloser) Close() error {
 }
 
 // importSubjects 导入 subjects 表（FTS 由导入完成后的 FinalizeSchema 集合式填充）。
+// 同时抽取 infobox 的「别名」并算出归一化检索串 search_norm，
+// 二者与 name / name_cn 一起构成条目的可搜索文本。
 func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
 	insert, err := conn.Prepare(`INSERT INTO subjects
-		(id, type, name, name_cn, infobox, platform, summary, nsfw, date, favorite, series, tags, score, score_details, rank, meta_tags)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(id, type, name, name_cn, aliases, search_norm, infobox, platform, summary, nsfw, date, favorite, series, tags, score, score_details, rank, meta_tags)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -229,7 +232,9 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 		tags, _ := json.Marshal(s.Tags)
 		sd, _ := json.Marshal(s.ScoreDetails)
 		mt, _ := json.Marshal(s.MetaTags)
-		_, err := insert.Exec(s.ID, s.Type, s.Name, s.NameCN, s.Infobox, s.Platform, s.Summary,
+		aliases := wiki.ExtractAliasesText(s.Infobox)
+		searchNorm := norm.Join(s.Name, s.NameCN, aliases)
+		_, err := insert.Exec(s.ID, s.Type, s.Name, s.NameCN, aliases, searchNorm, s.Infobox, s.Platform, s.Summary,
 			bool2int(s.NSFW), s.Date, string(fav), bool2int(s.Series), string(tags),
 			s.Score, string(sd), s.Rank, string(mt))
 		return err

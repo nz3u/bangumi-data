@@ -8,6 +8,7 @@ package wiki
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -117,6 +118,49 @@ func ExtractNameCN(raw string) string {
 		cn = cn[:idx]
 	}
 	return strings.TrimSpace(cn)
+}
+
+// aliasItemRe 匹配别名列表中的一项：[Shoujo Kageki Revue Starlight]。
+// 方括号内不再允许出现方括号或换行，避免把后续字段误当成别名。
+var aliasItemRe = regexp.MustCompile(`\[([^\[\]\n]*)\]`)
+
+// ExtractAliases 从 wiki 原始字符串的 infobox「别名」字段中提取别名列表。
+// 别名字段形如：
+//
+//	|别名={
+//	[Chou Kaguya-hime!]
+//	[Cosmic Princess Kaguya!]
+//	}
+//
+// 无该字段、解析失败或列表为空时返回 nil（导入与升级回填共用）。
+func ExtractAliases(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	ib, err := ParseInfobox(raw)
+	if err != nil {
+		return nil
+	}
+	block := ib.Get("别名")
+	if block == "" {
+		return nil
+	}
+	m := aliasItemRe.FindAllStringSubmatch(block, -1)
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for _, g := range m {
+		if a := strings.TrimSpace(g[1]); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// ExtractAliasesText 同 ExtractAliases，返回空格连接后的单串，便于直接入库。
+func ExtractAliasesText(raw string) string {
+	return strings.Join(ExtractAliases(raw), " ")
 }
 
 // Parse 是 ParseInfobox 的简写。

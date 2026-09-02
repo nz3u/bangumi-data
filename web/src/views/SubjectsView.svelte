@@ -26,7 +26,7 @@
     dateTo: '',
     nsfw: '',
     series: '',
-    sort: 'id',
+    sort: '',
     order: 'asc',
     size: 30
   }
@@ -48,6 +48,7 @@
   )
 
   const sortOptions = [
+    { value: '', label: '默认' },
     { value: 'id', label: 'ID' },
     { value: 'rank', label: '排名' },
     { value: 'score', label: '评分' },
@@ -290,7 +291,12 @@
         <label class="label" for="subject-sort">排序</label>
         <select id="subject-sort" class="input" bind:value={f.sort}>
           {#each sortOptions as o}
-            <option value={o.value}>{o.label}</option>
+            <option
+              value={o.value}
+              title={o.value === '' ? '搜索时按匹配度与人气排序，浏览时按 ID 排序' : undefined}
+            >
+              {o.label}
+            </option>
           {/each}
         </select>
       </div>
