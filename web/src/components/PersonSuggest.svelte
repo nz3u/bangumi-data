@@ -235,7 +235,7 @@
             onclick={() => pick(p)}
             onmousemove={() => (active = i)}
           >
-            <span class="min-w-0 flex-1 truncate"><Highlight text={p.name} q={text} />{#if p.name_cn && p.name_cn !== p.name}（<Highlight text={p.name_cn} q={text} />）{/if}</span>
+            <span class="min-w-0 flex-1 truncate"><Highlight text={p.name} q={text} scope="suggest" />{#if p.name_cn && p.name_cn !== p.name}（<Highlight text={p.name_cn} q={text} scope="suggest" />）{/if}</span>
             <small class="shrink-0 text-xs text-neutral-400">#{p.id}</small>
             <span class="chip shrink-0">{p.type_name}</span>
           </button>

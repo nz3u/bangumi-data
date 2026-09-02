@@ -204,7 +204,7 @@
               onclick={() => pick(t)}
               onmousemove={() => (active = i)}
             >
-              <span class="min-w-0 flex-1 truncate"><Highlight text={t.name} q={query} /></span>
+              <span class="min-w-0 flex-1 truncate"><Highlight text={t.name} q={query} scope="suggest" /></span>
               <small class="shrink-0 text-xs text-neutral-400">{fmtCompact(t.cnt)}</small>
               <span class="chip shrink-0 {polarity === '-' ? 'line-through decoration-red-500 dark:decoration-red-400' : ''}">{polarity === '-' ? '排除' : '包含'}</span>
             </button>

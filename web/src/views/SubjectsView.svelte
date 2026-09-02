@@ -13,7 +13,7 @@
  import Highlight from '../components/Highlight.svelte'
  import TagSuggest from '../components/TagSuggest.svelte'
   import { openDetail } from '../lib/detail.svelte.js'
-  import { externalUrl, isHighlightEnabled } from '../lib/settings.svelte.js'
+  import { externalUrl, isHighlightOn } from '../lib/settings.svelte.js'
 
   const DEFAULTS = {
     q: '',
@@ -358,14 +358,14 @@
                 <td class="max-w-52 truncate">
                   {#if it.name_cn}
                     <a href={externalUrl('subject', it.id)} target="_blank" rel="noreferrer" class="text-sakura-600 hover:underline dark:text-sakura-400" onclick={(e) => e.stopPropagation()}>
-                      {#if isHighlightEnabled('title')}<Highlight text={it.name_cn} q={f.q} />{:else}{it.name_cn}{/if}
+                      <Highlight text={it.name_cn} q={f.q} scope="title" />
                     </a>
                   {:else}
                     —
                   {/if}
                 </td>
                 <td class="max-w-52 truncate text-neutral-500 dark:text-neutral-400">
-                  {#if isHighlightEnabled('title')}<Highlight text={it.name} q={f.q} />{:else}{it.name}{/if}
+                  <Highlight text={it.name} q={f.q} scope="title" />
                 </td>
                 <td>{it.platform_name}</td>
                 <td>{fmtDate(it.date)}</td>
@@ -374,7 +374,7 @@
                 <td class="max-w-96">
                   <div class="flex flex-wrap items-center gap-1">
                     {#each rowTagsShown(it) as t (`${t.meta ? 'm' : 't'}:${t.name}`)}
-                      <span class="{t.meta ? 'chip-meta' : 'chip'} {isHighlightEnabled('tags') && positiveTagSet.has(t.name) ? POS_MARK : ''}">
+                      <span class="{t.meta ? 'chip-meta' : 'chip'} {isHighlightOn('tags') && positiveTagSet.has(t.name) ? POS_MARK : ''}">
                         {t.name}{#if t.cnt > 0}<small class="ml-0.5 text-neutral-400 dark:text-neutral-500" title="{t.name} 被引用 {t.cnt} 次">{fmtCompact(t.cnt)}</small>{/if}
                       </span>
                     {/each}

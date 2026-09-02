@@ -672,7 +672,7 @@
                   />
                   <div class="min-w-0 flex-1">
                     <h3 class="flex items-center gap-2">
-                      <button type="button" class="cursor-pointer font-medium text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} /></button>
+                      <button type="button" class="cursor-pointer font-medium text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} scope="filter" /></button>
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
                         {#if !subjExpanded(col.person_id)}
@@ -696,13 +696,13 @@
                       {/if}
                     </h3>
                     <div class="mt-1 flex flex-wrap items-center gap-1">
-                      <span class="chip"><Highlight text={col.type_name} q={filter} /></span>
+                      <span class="chip"><Highlight text={col.type_name} q={filter} scope="filter" /></span>
                       {#each col.career ?? [] as cb}
-                        <span class="chip"><Highlight text={careerCn(cb)} q={filter} /></span>
+                        <span class="chip"><Highlight text={careerCn(cb)} q={filter} scope="filter" /></span>
                       {/each}
                     </div>
                     {#if col.summary}
-                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400"><Highlight text={col.summary} q={filter} /></p>
+                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400"><Highlight text={col.summary} q={filter} scope="filter" /></p>
                     {/if}
                     <div class="truncate subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each shownSubjects(col) as s (s.id)}
@@ -712,9 +712,9 @@
                             onclick={() => openDetail('subject', s.id, s)}
                             class="cursor-pointer truncate text-sm text-sakura-600 hover:underline dark:text-sakura-400"
                             title={`${s.date || '未知日期'} · ${s.type_name}${s.roles.length ? ' · ' + s.roles.join(' / ') : ''}`}
-                          ><Highlight text={s.name_cn || s.name} q={filter} /></button>
+                          ><Highlight text={s.name_cn || s.name} q={filter} scope="filter" /></button>
                           {#if s.roles.length}
-                            <small class="shrink-0 text-[11px] text-neutral-400"><Highlight text={s.roles.join(' / ')} q={filter} /></small>
+                            <small class="shrink-0 text-[11px] text-neutral-400"><Highlight text={s.roles.join(' / ')} q={filter} scope="filter" /></small>
                             <!--small class="w-full min-w-0 truncate text-[11px] text-neutral-400">{s.roles.join(' / ')}</small-->
                           {/if}
                         </span>

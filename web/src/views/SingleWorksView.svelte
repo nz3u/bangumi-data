@@ -325,19 +325,19 @@
               {#each filtered.groups as g (g.label)}
                 <section class="card overflow-hidden">
                     <h3 class="border-b border-neutral-100 bg-neutral-50/80 px-4 py-2 text-sm font-semibold dark:border-white/[0.06] dark:bg-white/[0.03]">
-                      <Highlight text={g.label} q={filter} />
+                      <Highlight text={g.label} q={filter} scope="filter" />
                       <small class="ml-1 font-normal text-neutral-400">(x{g.works.length})</small>
                     </h3>
                   <div class="divide-y divide-neutral-100 dark:divide-white/[0.06]">
                     {#each g.works as w, i (w.id)}
                       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 ">
-                        <span class="shrink-0 text-xs tabular-nums text-neutral-400"><Highlight text={w.date || '—'} q={filter} /></span>
+                        <span class="shrink-0 text-xs tabular-nums text-neutral-400"><Highlight text={w.date || '—'} q={filter} scope="filter" /></span>
                         <button type="button" onclick={() => openDetail('subject', w.id, w)} class="cursor-pointer min-w-0 truncate text-sm text-sakura-600 hover:underline dark:text-sakura-400"
                           title="{w.date || ''} {w.type_name}"
-                        >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} />{:else}<Highlight text={w.name} q={filter} />{/if}</button>
-                        <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} /></span>
+                        >{#if w.name_cn}<Highlight text={w.name_cn} q={filter} scope="filter" />{:else}<Highlight text={w.name} q={filter} scope="filter" />{/if}</button>
+                        <span class="chip shrink-0"><Highlight text={w.type_name} q={filter} scope="filter" /></span>
                         <span class="ml-auto flex min-w-0 flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-                          <span class="min-w-0 max-w-full truncate leading-7"><Highlight text={roleText(w.roles) || '—'} q={filter} /></span>
+                          <span class="min-w-0 max-w-full truncate leading-7"><Highlight text={roleText(w.roles) || '—'} q={filter} scope="filter" /></span>
                         </span>
                       </div>
                     {/each}
