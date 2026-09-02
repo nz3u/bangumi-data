@@ -100,8 +100,35 @@ func intParam(c *gin.Context, key string) (int64, bool) {
 	return v, true
 }
 
+// ftsNormRowIDs 条目检索：在 subjects_fts.search_norm 上做子串匹配，返回命中的 rowid。
+// 传入的 qn 必须是 norm.Fold 的结果——标点、符号与空白都已被删除，
+// 因此可以直接拼进 LIKE 模式，不存在通配符注入。
+//
+// 这里刻意用 LIKE 而非 MATCH：FTS5 + trigram 会把 LIKE '%x%' 自动改写为基于
+// 3-gram 的索引查找，与 MATCH 等价；且 >=3 字符走索引、<3 字符自动退化为顺序扫描，
+// 调用方无需再按关键词长度分支。
+//
+// 注意：绝不能加 ESCAPE —— 带 ESCAPE 时 SQLite 不再做上述改写，
+// 查询计划从 "INDEX 0:L3" 退化为全表顺序扫描（实测 0.6ms -> 248ms）。
+func (h *handler) ftsNormRowIDs(qn string) ([]int64, error) {
+	rows, err := h.db.Query(`SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?`, "%"+qn+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ftsRowIDs 通用 FTS 搜索：返回匹配 rowid 的集合。
-// table: subjects_fts / persons_fts / characters_fts
+// table: persons_fts / characters_fts（条目检索请走 ftsNormRowIDs）
 func (h *handler) ftsRowIDs(table, q string) ([]int64, error) {
 	sql := fmt.Sprintf(`SELECT rowid FROM %s WHERE %s MATCH ?`, table, table)
 	rows, err := h.db.Query(sql, ftsPhrase(q))

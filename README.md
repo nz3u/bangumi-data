@@ -153,7 +153,7 @@ bangumi version                                               版本号
 | `GET /api/dbinfo` | 数据库版本状态：本地版本记录（无记录=旧版本）、上游最新导出、是否落后（serve 启动即后台检查，之后每 6h 复查；前端右下角徽标与「可更新」提醒数据源） |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
 | `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, path}`，path 为不含主机的 CDN 路径，由前端按设置拼接图片主机（默认 lain.bgm.tv，可在前端设置面板自定义） |
-| `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 匹配原名与中文名；`tag` 同时匹配普通标签与元标签，支持多标签组合：`+必须包含,-必须排除`，逗号分隔多选，无前缀视为 `+`；`meta_tag` 参数保留向后兼容） |
+| `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 经符号归一化后匹配原名、中文名与 infobox 别名，见「全文搜索」；`tag` 同时匹配普通标签与元标签，支持多标签组合：`+必须包含,-必须排除`，逗号分隔多选，无前缀视为 `+`；`meta_tag` 参数保留向后兼容；`sort` 留空为默认排序——有关键词时按匹配位置（原名＞中文名＞别名＞归一化）加人气，无关键词时按 ID） |
 | `GET /api/subjects/tags?kind=tag\|meta\|all&q=&limit=` | 条目标签/元标签实时建议（`kind=all` 合并两张表并去重，`kind=tag`/`meta` 单独查；按使用次数降序，前缀命中优先；前端拉取候选池后做拼音首字母本地过滤） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |
@@ -185,6 +185,13 @@ curl "localhost:8080/api/subjects/tags?kind=all&q=奇幻"
 
 # 全文搜索（中文子串匹配）
 curl "localhost:8080/api/subjects/search?q=路人女主的养成方法"
+
+# 全文搜索容忍符号差异并覆盖 infobox 别名：
+# 「少女歌剧」可命中「少女☆歌剧」、「Kaguya Hime」可命中别名「Chou Kaguya-hime!」。
+# 原理：检索文本 = name + name_cn + 别名，经归一化（去符号、全角转半角、小写）后
+# 建单列 trigram 索引，查询词同样归一化后匹配；结果按匹配位置分级（原名＞中文名＞
+# 别名＞仅归一化命中）再按人气排序。
+curl "localhost:8080/api/subjects/search?q=少女歌剧"
 
 # 与人物 1 合作的声优/制作人员（对应前端合作板块）
 curl "localhost:8080/api/persons/1/collaborators"
@@ -248,6 +255,12 @@ git push origin v0.2.0
 - `infobox` 的完整 wiki 语法解析（层级列表/嵌套模板等）尚未实现，当前只提取 `{{Infobox}}` 的 key/value；
   复杂语法可参考 [bangumi/wiki-parser-go](https://github.com/bangumi/wiki-parser-go) 扩展 `internal/wiki`。
 - 搜索使用 FTS5 trigram：≥3 字符走索引，短查询退化为全表扫描，量级上（百万行）可接受。
+  条目检索把 name + name_cn + infobox 别名归一化（去符号、全角转半角、小写）后存入
+  `subjects.search_norm` 单列索引，查询词同口径归一化，因此「少女歌剧」能命中「少女☆歌剧」、
+  「Kaguya Hime」能命中别名「Chou Kaguya-hime!」；查询统一走 `LIKE '%x%'`，
+  由 SQLite 自动改写为 trigram 索引查找（注意不可加 `ESCAPE`，否则索引改写失效）。
+  旧库由启动迁移自动补列回填并重建 `subjects_fts`（约 30 秒一次性）。
+  未覆盖：繁简混写（如「輝夜姬」对「輝夜姫/辉夜姬」）与错字模糊匹配。
 
 ### 标签搜索性能优化
 

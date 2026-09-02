@@ -6,7 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bangumi-subject-go/internal/model"
+	"bangumi-subject-go/internal/norm"
 )
+
+// maxSubjectFTSIDs 命中集上限：超过时放弃 IN 列表与分级排序，改为主表顺序扫描。
+// 触发者通常是 1~2 个字符的宽泛查询（命中可达数十万行），此时 IN 列表本身就是
+// 主要开销，两次扫描反而更慢。
+const maxSubjectFTSIDs = 30000
 
 // searchSubjects 条目搜索与筛选。
 // 参数：q（全文搜索）、type、platform、tag/meta_tag（多标签组合："+A,+B,-C"，
@@ -17,37 +23,45 @@ import (
 func (h *handler) searchSubjects(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
-		conds    []string
-		args     []any
-		fullScan bool // 过滤条件必须逐行求值（LIKE 回退），无法利用索引
+		conds     []string
+		args      []any
+		fullScan  bool   // 过滤条件必须逐行求值（大命中集回退 LIKE），无法利用索引
+		tierOrder string // 命中集按匹配位置分级排序（仅小命中集启用）
+		tierArgs  []any
 	)
 
 	if q != "" {
-		if useFTS(q) {
-			// 先尝试 FTS，失败则回退 LIKE（FTS 语法错误等场景）
-			ids, err := h.ftsRowIDs("subjects_fts", q)
-			if err == nil {
-				if len(ids) == 0 {
-					respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
-					return
-				}
-				placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-				conds = append(conds, "s.id IN ("+placeholders+")")
-				for _, id := range ids {
-					args = append(args, id)
-				}
-			} else {
-				fullScan = true
-				like := "%" + q + "%"
-				conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
-				args = append(args, like, like)
-			}
-		} else {
-			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
+		// 查询词经与入库时同样的归一化：去符号、统一全半角与大小写，
+		// 因而能命中「少女歌剧」->「少女☆歌剧」、「Kaguya Hime」->「Chou Kaguya-hime!」。
+		// 归一化结果为空说明查询词只含符号（如「！！！」）——符号不参与索引，
+		// 此时按无匹配处理（返回空集而非全表，后者对用户毫无意义）。
+		qn := norm.Fold(q)
+		if qn == "" {
+			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+			return
+		}
+		ids, err := h.ftsNormRowIDs(qn)
+		if err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		if len(ids) == 0 {
+			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+			return
+		}
+		if len(ids) > maxSubjectFTSIDs {
+			// 命中集过大（多见于 1~2 个字符的宽泛查询）：IN 列表与分级排序的
+			// 代价都超过一次顺序扫描，退回对 search_norm 直接 LIKE。
 			fullScan = true
-			like := "%" + q + "%"
-			conds = append(conds, "(s.name LIKE ? OR s.name_cn LIKE ?)")
-			args = append(args, like, like)
+			conds = append(conds, "s.search_norm LIKE ? ESCAPE '\\'")
+			args = append(args, "%"+escapeLike(qn)+"%")
+		} else {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+			conds = append(conds, "s.id IN ("+placeholders+")")
+			for _, id := range ids {
+				args = append(args, id)
+			}
+			tierOrder, tierArgs = subjectTierOrder(q)
 		}
 	}
 
@@ -97,8 +111,9 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
-	// 排序
-	sort := c.DefaultQuery("sort", "id")
+	// 排序。sort 为空表示前端未指定：有关键词时按人气降序更符合搜索预期，
+	// 否则沿用 id 序（浏览全库的默认行为保持不变）。
+	sort := c.Query("sort")
 	order := strings.ToLower(c.DefaultQuery("order", "asc"))
 	if order != "desc" {
 		order = "asc"
@@ -113,11 +128,30 @@ func (h *handler) searchSubjects(c *gin.Context) {
 		orderBy = "s.date " + order + ", s.id"
 	case "favorite":
 		orderBy = "CAST(json_extract(s.favorite, '$.done') AS INTEGER) DESC, s.id"
-	default:
+	case "id":
 		orderBy = "s.id " + order
+	default:
+		if tierOrder != "" {
+			// 关键词搜索：同分级内把收藏人数多的排前面。
+			// 例：搜「辉夜姬」时「超辉夜姬！」靠归一化命中，与一批冷门条目同级，
+			// 仅按 id 排会被埋到第 11 位，按人气则回到首位。
+			orderBy = "CAST(COALESCE(json_extract(s.favorite, '$.done'), 0) AS INTEGER) DESC, s.id " + order
+		} else {
+			orderBy = "s.id " + order
+		}
+	}
+	// 有关键词时把匹配位置分级作为首要排序，用户指定的 sort 退为次级排序：
+	// 例句搜索「少女歌剧」时，靠归一化才能命中的主条目会落在后面，
+	// 需要由分级把它提到仅靠符号差异才命中不了的冷门条目之前。
+	if tierOrder != "" {
+		orderBy = tierOrder + ", " + orderBy
 	}
 
-	queryArgs := append(args, size, (page-1)*size)
+	// ORDER BY 的参数紧跟在 WHERE 参数之后、LIMIT 之前。
+	queryArgs := make([]any, 0, len(args)+len(tierArgs)+2)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, tierArgs...)
+	queryArgs = append(queryArgs, size, (page-1)*size)
 
 	// 计数与取数策略：
 	//   - 过滤条件可走索引时拆成两条查询——数据查询按主键序取满一页即提前终止，
@@ -301,6 +335,25 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	return strings.ReplaceAll(s, `_`, `\_`)
+}
+
+// subjectTierOrder 构造条目结果的分级排序表达式及其参数：
+//
+//	0 原名或中文名完全等于查询词
+//	1 原名/中文名原样子串命中（查询词本身带符号时才能原样命中）
+//	2 仅别名命中
+//	3 仅归一化后命中（查询词被符号切断，或全半角/大小写不同）
+//
+// 该表达式只对命中集求值（通常数十至数千行），不改变 SELECT 的列，
+// 因此无需调整结果扫描逻辑。参数顺序与表达式中占位符的出现顺序一致。
+func subjectTierOrder(q string) (string, []any) {
+	eq := q
+	like := "%" + escapeLike(q) + "%"
+	expr := "CASE WHEN s.name = ? COLLATE NOCASE OR s.name_cn = ? COLLATE NOCASE THEN 0" +
+		" WHEN s.name LIKE ? ESCAPE '\\' OR s.name_cn LIKE ? ESCAPE '\\' THEN 1" +
+		" WHEN s.aliases LIKE ? ESCAPE '\\' THEN 2" +
+		" ELSE 3 END"
+	return expr, []any{eq, eq, like, like, like}
 }
 
 // relationItem 条目关联（含反向）。
