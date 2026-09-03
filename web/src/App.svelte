@@ -8,6 +8,7 @@ import DbBadge from './components/DbBadge.svelte'
 import SettingsPanel from './components/SettingsPanel.svelte'
 import LazyRoute from './components/LazyRoute.svelte'
   import { health, stats, dbInfo, openSystemStream } from './lib/api.js'
+  import { adminConfig, getStoredToken } from './lib/admin.js'
   import GitHub from './components/GitHub.svelte';
   import UpdatingBanner from './components/UpdatingBanner.svelte';
 
@@ -37,6 +38,24 @@ import LazyRoute from './components/LazyRoute.svelte'
   let dbVer = $state(null)
   let svcError = $state('')
   let lastUpdate = $state(null)
+  let hasToken = $state(false)
+  let autoEnabled = $state(null)
+
+  function getQueryToken() {
+    try { return new URL(window.location.href).searchParams.get('token') || '' } catch { return '' }
+  }
+  async function refreshAuthState() {
+    try {
+      const t = getStoredToken() || getQueryToken()
+      hasToken = !!t
+      if (!hasToken) { autoEnabled = null; return }
+      const cfg = await adminConfig()
+      autoEnabled = !!cfg.auto_update?.enabled
+    } catch {
+      // 未鉴权或网络错误时保持 hasToken 但 autoEnabled 未知
+      if (!hasToken) autoEnabled = null
+    }
+  }
 
   async function refreshStats() {
     try {
@@ -73,8 +92,18 @@ import LazyRoute from './components/LazyRoute.svelte'
     })
   }
 
+  // 监听 token 变化以控制更新横幅显隐
+  $effect(() => {
+    void currentPath
+    refreshAuthState()
+  })
+
   onMount(() => {
     startSystemStream()
+    refreshAuthState()
+    // 监听 storage 变化（/setup 设置 token 后回退到首页需刷新横幅）
+    const onStorage = () => refreshAuthState()
+    window.addEventListener('storage', onStorage)
     // 路由副作用：同步页面标题；未知路径（含尾斜杠等）替换为默认页。
     const offRoute = listen(({ location }) => {
       const p = location.pathname
@@ -94,6 +123,7 @@ import LazyRoute from './components/LazyRoute.svelte'
 
     return () => {
       if (systemEsClose) systemEsClose()
+      window.removeEventListener('storage', onStorage)
       offRoute()
     }
   })
@@ -120,12 +150,18 @@ import LazyRoute from './components/LazyRoute.svelte'
       <a href="/setup" onclick={(e)=>{e.preventDefault(); navigate('/setup')}} class="ml-auto rounded bg-amber-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-600">去初始化 →</a>
     </div>
   </div>
-{:else if dbVer?.update_available && dbVer?.latest}
+{:else if dbVer?.update_available && dbVer?.latest && hasToken}
   <div class="border-b border-amber-200 bg-amber-50/70 px-4 py-1.5 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-300">
     <div class="mx-auto flex max-w-6xl items-center gap-2">
       <span>检测到新数据版本 {dbVer.latest.version} 可更新，</span>
       <a href="/setup" onclick={(e)=>{e.preventDefault(); navigate('/setup')}} class="underline font-medium">去更新 →</a>
-      <span class="hidden sm:inline opacity-70">（每周三 05:30 自动更新若已启用）</span>
+      {#if autoEnabled === true}
+        <span class="hidden sm:inline opacity-70">（每周三 05:30 (UTC+8) 自动更新已启用）</span>
+      {:else if autoEnabled === false}
+        <span class="hidden sm:inline opacity-70">（每周三 05:30 (UTC+8) 自动更新未启用）</span>
+      {:else}
+        <span class="hidden sm:inline opacity-70">（每周三 05:30 (UTC+8) 自动更新）</span>
+      {/if}
     </div>
   </div>
 {/if}

@@ -9,10 +9,14 @@ import (
 	"bangumi-subject-go/internal/config"
 )
 
-// NextWednesday0530 计算从 now 起下一个周三 05:30（本地时区）。
+// CST 为 UTC+8（Asia/Shanghai），自动更新固定按此时间每周三 05:30 触发
+var cst = time.FixedZone("CST", 8*3600)
+
+// NextWednesday0530 计算从 now 起下一个周三 05:30（UTC+8）。
 // 若 now 恰在周三 05:30 之前则返回当天 05:30，否则下一周。
 func NextWednesday0530(now time.Time) time.Time {
-	loc := now.Location()
+	now = now.In(cst)
+	loc := cst
 	// 今天 05:30
 	today530 := time.Date(now.Year(), now.Month(), now.Day(), 5, 30, 0, 0, loc)
 	wd := int(now.Weekday()) // Sunday=0
@@ -55,7 +59,7 @@ func (m *Manager) StartScheduler(ctx context.Context) {
 		}
 
 		for {
-			now := time.Now()
+			now := time.Now().In(cst)
 			next := NextWednesday0530(now)
 			dur := time.Until(next)
 			log.Printf("admin: 下次自动更新检查安排在 %s（%s 后）", next.Format(time.RFC3339), dur.Round(time.Second))

@@ -225,7 +225,7 @@
         <div class="min-w-0 flex-1">
           <h2 class="text-lg font-semibold leading-none">初始化 / 更新</h2>
           <p class="mt-1.5 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            携带 <code class="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-white/10">token</code> 即可执行初始化或更新。首次部署请点击“开始初始化”；检测到新版或失败时可在此重试。自动更新为 <b>每周三 05:30</b>（需在配置中开启）。
+            携带 <code class="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-white/10">token</code> 即可执行初始化或更新。首次部署请点击“开始初始化”；检测到新版或失败时可在此重试。自动更新为 <b>每周三 05:30 (UTC+8)</b>（需在配置中开启）。
           </p>
         </div>
         <a href="/admin" use:link class="inline-flex shrink-0 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/5">前往配置 →</a>

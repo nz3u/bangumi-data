@@ -179,7 +179,7 @@
           <legend class="px-2 text-sm font-medium">自动更新</legend>
           <label class="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" class="rounded" bind:checked={form.auto_enabled} />
-            启用每周三 05:30 自动更新
+            启用每周三 05:30 (UTC+8) 自动更新
             <span class="text-xs font-normal text-neutral-500">（需 serve 常驻）</span>
           </label>
           <div class="mt-3 grid gap-4 sm:grid-cols-2 min-w-0">

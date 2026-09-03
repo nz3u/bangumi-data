@@ -88,7 +88,7 @@ func usage() {
 
 数据库版本记录于 data/config.json 的 database 字段；update 命令据此判断
 当前库是否落后于 Archive 最新导出。运行 import/update/serve/config 子命令查看其选项。
-自动更新（每周三 05:30）在 serve 运行状态且 config.json 中 auto_update.enabled=true 时生效，
+自动更新（每周三 05:30 (UTC+8)）在 serve 运行状态且 config.json 中 auto_update.enabled=true 时生效，
 更新期间前端展示“更新中”提示，可在 /setup 页面查看实时日志；失败或新版可用时可通过
 携带 token 访问 /setup 手动触发更新。配置可通过 bangumi config 或前端 /admin 完成。
 首次启动时将自动生成 admin_token 并写入 data/config.json，请妥善保管。
@@ -348,7 +348,7 @@ func printConfigUsage(err error) error {
 可配置项:
   bgm_api_key                 next.bgm.tv API Key（人物头像）
   admin_token                 管理接口鉴权 token（自动生成，访问 /setup 与 /admin 需携带）
-  auto_update.enabled         是否启用每周三 05:30 自动更新 (true/false)
+  auto_update.enabled         是否启用每周三 05:30 (UTC+8) 自动更新 (true/false)
   auto_update.threads         下载并发数 (1-32，0 表示默认 8)
   auto_update.keep_zip        是否保留下载的 zip (true/false)
   server.listen               监听地址（如 :8080）
@@ -459,7 +459,7 @@ func cmdServe(args []string) error {
 
 说明：
   serve 启动后将常驻提供查询服务；若 config.json 中 auto_update.enabled=true，
-  则每周三 05:30 自动检查并在后台执行更新（下载->导入临时库->切库->自动恢复服务），
+  则每周三 05:30 (UTC+8) 自动检查并在后台执行更新（下载->导入临时库->切库->自动恢复服务），
   更新期间前端展示“更新中”提示，可在 /setup 页面查看实时日志。
   任何时候均可携带 token 访问 /setup 手动触发初始化/更新；失败或检测到新版但未自动更新时
   也可通过该页面完成更新。配置可通过 bangumi config 或前端 /admin/config 修改。
@@ -567,7 +567,7 @@ func cmdServe(args []string) error {
 		} else {
 			// 检查版本滞后
 			if st := dbVer.Status(); st.UpdateAvailable {
-				log.Printf("检测到新版本 %s 可更新，可在 /setup 页面手动触发（或等待每周三 05:30 自动更新）", st.Latest.Version)
+				log.Printf("检测到新版本 %s 可更新，可在 /setup 页面手动触发（或等待每周三 05:30 (UTC+8) 自动更新）", st.Latest.Version)
 			}
 		}
 		log.Printf("服务已启动，监听 %s（数据库 %s）", *listen, *dbPath)
