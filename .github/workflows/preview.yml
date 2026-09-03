@@ -150,6 +150,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
+            type=raw,value=preview
             type=sha,prefix=preview-,format=short
 
       - name: Build and push
@@ -213,7 +214,7 @@ jobs:
             echo "notes<<EOF"
             echo "## 更新日志"
             echo ""
-            echo "**构建**: \`${SHORT_SHA}\` | **Docker**: \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`"
+            echo "**构建**: \`${SHORT_SHA}\` | **Docker**: \`ghcr.io/${{ github.repository }}:preview\` / \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`"
             echo ""
             echo "$LOG"
             echo ""
@@ -239,7 +240,7 @@ jobs:
           echo "## Preview Build \`${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Release**: [Preview Build](https://github.com/${{ github.repository }}/releases/tag/preview)" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Docker**: \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Docker**: \`ghcr.io/${{ github.repository }}:preview\` / \`ghcr.io/${{ github.repository }}:preview-${SHORT_SHA}\` (通用 \`preview\` 便于固定拉取)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### 更新日志" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.changelog.outputs.notes }}" >> "$GITHUB_STEP_SUMMARY"
