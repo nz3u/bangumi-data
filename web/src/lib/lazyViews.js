@@ -9,7 +9,9 @@ const registry = {
   '/singleworks': () => import('../views/SingleWorksView.svelte'),
   '/subjects': () => import('../views/SubjectsView.svelte'),
   '/persons': () => import('../views/PersonsView.svelte'),
-  '/characters': () => import('../views/CharactersView.svelte')
+  '/characters': () => import('../views/CharactersView.svelte'),
+  '/setup': () => import('../views/SetupView.svelte'),
+  '/admin': () => import('../views/AdminView.svelte')
 }
 
 const cache = new Map()

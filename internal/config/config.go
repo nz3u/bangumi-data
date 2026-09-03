@@ -4,6 +4,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,22 @@ import (
 type Config struct {
 	BgmApiKey string        `json:"bgm_api_key,omitempty"`
 	Database  *DatabaseInfo `json:"database,omitempty"`
+	// 管理与自动更新配置（新增字段，旧文件缺省时取默认值）
+	AdminToken string             `json:"admin_token,omitempty"`
+	AutoUpdate *AutoUpdateConfig `json:"auto_update,omitempty"`
+	Server     *ServerConfig     `json:"server,omitempty"`
+}
+
+// AutoUpdateConfig 自动更新行为配置。
+type AutoUpdateConfig struct {
+	Enabled bool   `json:"enabled"`
+	KeepZip bool   `json:"keep_zip,omitempty"`
+	Threads int    `json:"threads,omitempty"` // 0 表示使用默认 8
+}
+
+// ServerConfig 服务端可选配置（与环境变量/命令行互补，优先级：命令行 > 环境变量 > 配置文件）。
+type ServerConfig struct {
+	Listen string `json:"listen,omitempty"`
 }
 
 // DatabaseInfo 数据库版本信息（import/update 完成后自动写入）。
@@ -85,4 +103,70 @@ func LoadAPIKey(dataDir string) string {
 		return ""
 	}
 	return strings.TrimSpace(c.BgmApiKey)
+}
+
+// AutoUpdateEnabled 是否允许自动更新（缺省配置视为关闭）。
+func (c *Config) AutoUpdateEnabled() bool {
+	if c == nil || c.AutoUpdate == nil {
+		return false
+	}
+	return c.AutoUpdate.Enabled
+}
+
+// EnsureDefaults 为缺省字段填充默认值（不改变已显式配置的值）。
+func (c *Config) EnsureDefaults() {
+	if c.AutoUpdate == nil {
+		c.AutoUpdate = &AutoUpdateConfig{}
+	}
+	if c.Server == nil {
+		c.Server = &ServerConfig{}
+	}
+}
+
+// GenerateToken 生成随机 admin token（16 字节 hex）。
+func GenerateToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// EnsureAdminToken 确保配置中存在 admin_token，不存在则生成并返回（调用方决定是否持久化）。
+func (c *Config) EnsureAdminToken() (string, error) {
+	if c.AdminToken != "" {
+		return c.AdminToken, nil
+	}
+	tok, err := GenerateToken()
+	if err != nil {
+		return "", err
+	}
+	c.AdminToken = tok
+	return tok, nil
+}
+
+// EffectiveListen 生效的监听地址：环境变量 > 配置文件 > 默认 :8080。
+func EffectiveListen(dataDir string, flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if v := strings.TrimSpace(os.Getenv("BANGUMI_LISTEN")); v != "" {
+		return v
+	}
+	cfg, err := Load(FilePath(dataDir))
+	if err == nil && cfg.Server != nil && strings.TrimSpace(cfg.Server.Listen) != "" {
+		return strings.TrimSpace(cfg.Server.Listen)
+	}
+	return ":8080"
+}
+
+// EffectiveDBPath 生效的数据库路径：环境变量 > 配置文件 > 默认 data/bangumi.db。
+func EffectiveDBPath(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if v := strings.TrimSpace(os.Getenv("BANGUMI_DB")); v != "" {
+		return v
+	}
+	return "data/bangumi.db"
 }

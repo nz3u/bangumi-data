@@ -167,12 +167,12 @@ func (h *handler) searchSubjects(c *gin.Context) {
 	if fullScan {
 		dataSQL = "SELECT " + subjectBriefCols + ", COUNT(*) OVER() FROM subjects s" + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
 		totalPtr = &total
-	} else if err := h.db.QueryRow("SELECT COUNT(*) FROM subjects s"+where, args...).Scan(&total); err != nil {
+	} else if err := h.getDB().QueryRow("SELECT COUNT(*) FROM subjects s"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 
-	rows, err := h.db.Query(dataSQL, queryArgs...)
+	rows, err := h.getDB().Query(dataSQL, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
@@ -301,7 +301,7 @@ func (h *handler) suggestSubjectTags(c *gin.Context) {
 	sql := selectExpr + " FROM (" + subQuery + ") t" + where + groupBy + orderBy
 	args = append(args, prefix, limit)
 
-	rows, err := h.db.Query(sql, args...)
+	rows, err := h.getDB().Query(sql, args...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return
@@ -420,14 +420,14 @@ func (h *handler) getSubject(c *gin.Context) {
 		infobox, summary, tags, fav, sd, mt string
 		series, nsfw                        int64
 	)
-	err := h.db.QueryRow(`SELECT s.infobox, s.summary, s.series, s.nsfw, s.tags, s.favorite, s.score_details, s.meta_tags
+	err := h.getDB().QueryRow(`SELECT s.infobox, s.summary, s.series, s.nsfw, s.tags, s.favorite, s.score_details, s.meta_tags
 		FROM subjects s WHERE s.id = ?`, id).Scan(&infobox, &summary, &series, &nsfw, &tags, &fav, &sd, &mt)
 	if err != nil {
 		fail(c, 404, "条目不存在")
 		return
 	}
 
-	base, err := h.scanSubjectBrief(h.db.QueryRow(`SELECT `+subjectBriefCols+` FROM subjects s WHERE s.id = ?`, id), nil)
+	base, err := h.scanSubjectBrief(h.getDB().QueryRow(`SELECT `+subjectBriefCols+` FROM subjects s WHERE s.id = ?`, id), nil)
 	if err != nil {
 		fail(c, 404, "条目不存在")
 		return
@@ -446,7 +446,7 @@ func (h *handler) getSubject(c *gin.Context) {
 	}
 
 	// 关联（双向）
-	rrows, err := h.db.Query(`SELECT sr.subject_id, sr.relation_type, sr.related_subject_id, sr."order",
+	rrows, err := h.getDB().Query(`SELECT sr.subject_id, sr.relation_type, sr.related_subject_id, sr."order",
 		rs.name, rs.name_cn, rs.type
 		FROM subject_relations sr
 		JOIN subjects rs ON rs.id = sr.related_subject_id
@@ -487,7 +487,7 @@ func (h *handler) getSubject(c *gin.Context) {
 	rrows.Close()
 
 	// 制作人员
-	srows, err := h.db.Query(`SELECT sp.position, p.id, p.name, p.type, sp.appear_eps
+	srows, err := h.getDB().Query(`SELECT sp.position, p.id, p.name, p.type, sp.appear_eps
 		FROM subject_persons sp JOIN persons p ON p.id = sp.person_id
 		WHERE sp.subject_id = ? ORDER BY sp.position, p.id`, id)
 	if err != nil {
@@ -506,7 +506,7 @@ func (h *handler) getSubject(c *gin.Context) {
 	srows.Close()
 
 	// 角色
-	crows, err := h.db.Query(`SELECT sc.type, sc."order", c.id, c.name, c.role, c.collects, c.comments
+	crows, err := h.getDB().Query(`SELECT sc.type, sc."order", c.id, c.name, c.role, c.collects, c.comments
 		FROM subject_characters sc JOIN characters c ON c.id = sc.character_id
 		WHERE sc.subject_id = ? ORDER BY sc.type, sc."order", c.id`, id)
 	if err != nil {
@@ -526,7 +526,7 @@ func (h *handler) getSubject(c *gin.Context) {
 	crows.Close()
 
 	// 章节统计
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM episodes WHERE subject_id = ?", id).Scan(&d.EpisodeCount); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM episodes WHERE subject_id = ?", id).Scan(&d.EpisodeCount); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
@@ -552,13 +552,13 @@ func (h *handler) getSubjectEpisodes(c *gin.Context) {
 	where := " WHERE " + strings.Join(conds, " AND ")
 
 	var total int64
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM episodes"+where, args...).Scan(&total); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM episodes"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 
 	queryArgs := append(args, size, (page-1)*size)
-	rows, err := h.db.Query(`SELECT id, name, name_cn, description, airdate, disc, duration, subject_id, sort, type
+	rows, err := h.getDB().Query(`SELECT id, name, name_cn, description, airdate, disc, duration, subject_id, sort, type
 		FROM episodes`+where+` ORDER BY sort, id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())

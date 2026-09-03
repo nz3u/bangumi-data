@@ -2,8 +2,10 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -11,11 +13,45 @@ import (
 
 // health 健康检查；附带编译期注入的版本号，供前端页头展示（前后端版本同源）。
 func (h *handler) health(c *gin.Context) {
-	if err := h.db.Ping(); err != nil {
+	if err := h.getDB().Ping(); err != nil {
 		fail(c, 500, "数据库不可用: "+err.Error())
 		return
 	}
 	respOK(c, gin.H{"status": "ok", "version": h.version})
+}
+
+// healthStream SSE 推送健康状态（在线检查），间隔 30s（比之前 60s 轮询更短），首包即时
+func (h *handler) healthStream(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Header("Access-Control-Allow-Origin", "*")
+
+	flush := func() {
+		if f, ok := c.Writer.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+	send := func() {
+		if err := h.getDB().Ping(); err != nil {
+			c.SSEvent("health", gin.H{"status": "error", "error": err.Error(), "version": h.version})
+		} else {
+			c.SSEvent("health", gin.H{"status": "ok", "version": h.version})
+		}
+		flush()
+	}
+	send()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			send()
+		case <-c.Request.Context().Done():
+			return
+		}
+	}
 }
 
 // dbInfo 数据库版本与上游最新导出的对比状态。
@@ -40,13 +76,102 @@ func (h *handler) stats(c *gin.Context) {
 	res := gin.H{}
 	for _, t := range tables {
 		var n int64
-		if err := h.db.QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
+		if err := h.getDB().QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
 			fail(c, 500, err.Error())
 			return
 		}
 		res[t] = n
 	}
 	respOK(c, res)
+}
+
+// statsStream SSE 推送统计（与 health 同频 30s，首包即时）- 保留兼容，新逻辑请用 systemStream
+func (h *handler) statsStream(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Header("Access-Control-Allow-Origin", "*")
+
+	tables := []string{
+		"subjects", "persons", "characters", "episodes",
+		"subject_relations", "subject_persons", "subject_characters",
+		"person_characters", "person_relations",
+	}
+	send := func() {
+		res := gin.H{}
+		for _, t := range tables {
+			var n int64
+			if err := h.getDB().QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
+				c.SSEvent("stats", gin.H{"error": err.Error()})
+				if f, ok := c.Writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+			res[t] = n
+		}
+		c.SSEvent("stats", res)
+		if f, ok := c.Writer.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+	send()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			send()
+		case <-c.Request.Context().Done():
+			return
+		}
+	}
+}
+
+// systemStream 合并 health + stats 的 SSE（30s 间隔，与 health 相同，首包即时）
+func (h *handler) systemStream(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Header("Access-Control-Allow-Origin", "*")
+
+	tables := []string{
+		"subjects", "persons", "characters", "episodes",
+		"subject_relations", "subject_persons", "subject_characters",
+		"person_characters", "person_relations",
+	}
+	send := func() {
+		health := gin.H{"status": "ok", "version": h.version}
+		if err := h.getDB().Ping(); err != nil {
+			health = gin.H{"status": "error", "error": err.Error(), "version": h.version}
+		}
+		stats := gin.H{}
+		for _, t := range tables {
+			var n int64
+			if err := h.getDB().QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
+				stats = gin.H{"error": err.Error()}
+				break
+			}
+			stats[t] = n
+		}
+		c.SSEvent("system", gin.H{"health": health, "stats": stats})
+		if f, ok := c.Writer.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+	send()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			send()
+		case <-c.Request.Context().Done():
+			return
+		}
+	}
 }
 
 // constants 返回全部 id 常量映射，前端据此渲染分类名称。
@@ -111,7 +236,7 @@ func intParam(c *gin.Context, key string) (int64, bool) {
 // 注意：绝不能加 ESCAPE —— 带 ESCAPE 时 SQLite 不再做上述改写，
 // 查询计划从 "INDEX 0:L3" 退化为全表顺序扫描（实测 0.6ms -> 248ms）。
 func (h *handler) ftsNormRowIDs(qn string) ([]int64, error) {
-	rows, err := h.db.Query(`SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?`, "%"+qn+"%")
+	rows, err := h.getDB().Query(`SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?`, "%"+qn+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +256,7 @@ func (h *handler) ftsNormRowIDs(qn string) ([]int64, error) {
 // table: persons_fts / characters_fts（条目检索请走 ftsNormRowIDs）
 func (h *handler) ftsRowIDs(table, q string) ([]int64, error) {
 	sql := fmt.Sprintf(`SELECT rowid FROM %s WHERE %s MATCH ?`, table, table)
-	rows, err := h.db.Query(sql, ftsPhrase(q))
+	rows, err := h.getDB().Query(sql, ftsPhrase(q))
 	if err != nil {
 		return nil, err
 	}

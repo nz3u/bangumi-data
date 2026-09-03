@@ -311,7 +311,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 		p      model.Person
 		career string
 	)
-	err := h.db.QueryRow(`SELECT id, name, type, career, infobox, summary, comments, collects
+	err := h.getDB().QueryRow(`SELECT id, name, type, career, infobox, summary, comments, collects
 		FROM persons WHERE id = ?`, id).
 		Scan(&p.ID, &p.Name, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
 	if err != nil {
@@ -332,7 +332,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	if ib, err := wiki.ParseInfobox(p.Infobox); err == nil {
 		person.Infobox = ib.Fields
 	}
-	if err := h.db.QueryRow(`SELECT COUNT(*) FROM (
+	if err := h.getDB().QueryRow(`SELECT COUNT(*) FROM (
 			SELECT DISTINCT subject_id FROM subject_persons WHERE person_id = ?
 			UNION
 			SELECT DISTINCT subject_id FROM person_characters WHERE person_id = ?)`, id, id).
@@ -358,7 +358,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 		args = append(args, typeFilter)
 	}
 	args = append(args, size, (page-1)*size)
-	rows, err := h.db.Query(`WITH `+appSQL+`,
+	rows, err := h.getDB().Query(`WITH `+appSQL+`,
 `+pairsSQL+`,
 		agg AS (
 			SELECT other, COUNT(*) AS cnt, COUNT(*) OVER() AS total
@@ -470,7 +470,7 @@ func (h *handler) attachCollabSubjects(id int64, items []*collabItem, appSQL str
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(items)), ",")
 	// CROSS JOIN 固定连接顺序：app/detail 均为小结果集，
 	// 避免 SQLite 把大表（subjects/subject_persons）选作外层全表扫描
-	rows, err := h.db.Query(`WITH `+appSQL+`,
+	rows, err := h.getDB().Query(`WITH `+appSQL+`,
 		detail AS (
 			SELECT sp.person_id AS other, ap.subject_id AS sid, sp.position AS position, 0 AS is_cv, '' AS char_name
 			FROM app ap CROSS JOIN subject_persons sp ON sp.subject_id = ap.subject_id AND sp.person_id IN (`+placeholders+`)`+
@@ -630,7 +630,7 @@ func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 	// 直接从基表枚举去重后的角色明细行，标签合并在 Go 侧完成：
 	//   - SQL 内按 (stype,pos,sid[,oid]) DISTINCT，消除同条目多角色行的重复；
 	//   - app_t/CROSS JOIN 固定 app 为外层循环，杜绝 `person_id <> ?` 引发的全表扫描。
-	rows, err := h.db.Query(`WITH `+collaborationAppCTE+`,
+	rows, err := h.getDB().Query(`WITH `+collaborationAppCTE+`,
 		self_staff AS (
 			SELECT DISTINCT sa.type AS stype, sp.position AS pos, ap.subject_id AS sid
 			FROM app ap
@@ -758,7 +758,7 @@ type pairWork struct {
 func (h *handler) loadPairBrief(id int64) (*pairPerson, bool, error) {
 	var p pairPerson
 	var career string
-	err := h.db.QueryRow(`SELECT id, name, type, career, summary FROM persons WHERE id = ?`, id).
+	err := h.getDB().QueryRow(`SELECT id, name, type, career, summary FROM persons WHERE id = ?`, id).
 		Scan(&p.ID, &p.Name, &p.Type, &career, &p.Summary)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
@@ -815,7 +815,7 @@ func (h *handler) getPersonCollaborationWith(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`WITH app_a AS (
+	rows, err := h.getDB().Query(`WITH app_a AS (
 			SELECT DISTINCT subject_id FROM subject_persons WHERE person_id = ?
 			UNION
 			SELECT DISTINCT subject_id FROM person_characters WHERE person_id = ?
@@ -933,7 +933,7 @@ func (h *handler) getPersonRoles(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`WITH apps AS (
+	rows, err := h.getDB().Query(`WITH apps AS (
 			SELECT DISTINCT subject_id AS sid FROM subject_persons WHERE person_id = ?
 			UNION
 			SELECT DISTINCT subject_id AS sid FROM person_characters WHERE person_id = ?
