@@ -65,12 +65,12 @@ func (h *handler) searchPersons(c *gin.Context) {
 	if fullScan {
 		countCol = ", COUNT(*) OVER()"
 		totalPtr = &total
-	} else if err := h.db.QueryRow("SELECT COUNT(*) FROM persons p"+where, args...).Scan(&total); err != nil {
+	} else if err := h.getDB().QueryRow("SELECT COUNT(*) FROM persons p"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 
-	rows, err := h.db.Query(`SELECT p.id, p.name, p.name_cn, p.type, p.career, p.comments, p.collects`+countCol+`
+	rows, err := h.getDB().Query(`SELECT p.id, p.name, p.name_cn, p.type, p.career, p.comments, p.collects`+countCol+`
 		FROM persons p`+where+` ORDER BY p.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -155,7 +155,7 @@ func (h *handler) getPerson(c *gin.Context) {
 		career      string
 		nameCN      string
 	)
-	err := h.db.QueryRow(`SELECT id, name, name_cn, type, career, infobox, summary, comments, collects
+	err := h.getDB().QueryRow(`SELECT id, name, name_cn, type, career, infobox, summary, comments, collects
 		FROM persons WHERE id = ?`, id).Scan(&p.ID, &p.Name, &nameCN, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
 	if err != nil {
 		fail(c, 404, "人物不存在")
@@ -177,11 +177,11 @@ func (h *handler) getPerson(c *gin.Context) {
 		d.Infobox = ib.Fields
 	}
 
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM subject_persons WHERE person_id = ?", id).Scan(&d.Works); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM subject_persons WHERE person_id = ?", id).Scan(&d.Works); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM person_characters WHERE person_id = ?", id).Scan(&d.Roles); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM person_characters WHERE person_id = ?", id).Scan(&d.Roles); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
@@ -229,13 +229,13 @@ func (h *handler) getPersonWorks(c *gin.Context) {
 	where := " WHERE " + strings.Join(conds, " AND ")
 
 	var total int64
-	if err := h.db.QueryRow("SELECT COUNT(*) FROM subject_persons sp JOIN subjects s ON s.id = sp.subject_id"+where, args...).Scan(&total); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM subject_persons sp JOIN subjects s ON s.id = sp.subject_id"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 
 	queryArgs := append(args, size, (page-1)*size)
-	rows, err := h.db.Query(`SELECT s.id, s.name, s.name_cn, s.type, s.platform, s.date, s.score, s.rank, sp.position, sp.appear_eps
+	rows, err := h.getDB().Query(`SELECT s.id, s.name, s.name_cn, s.type, s.platform, s.date, s.score, s.rank, sp.position, sp.appear_eps
 		FROM subject_persons sp JOIN subjects s ON s.id = sp.subject_id`+where+`
 		ORDER BY s.date DESC, s.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
@@ -286,7 +286,7 @@ func (h *handler) getPersonCollaborators(c *gin.Context) {
 	page, size := pagination(c)
 
 	var total int64
-	if err := h.db.QueryRow(`SELECT COUNT(DISTINCT sp2.person_id)
+	if err := h.getDB().QueryRow(`SELECT COUNT(DISTINCT sp2.person_id)
 		FROM subject_persons sp1
 		JOIN subject_persons sp2 ON sp2.subject_id = sp1.subject_id AND sp2.person_id <> sp1.person_id
 		WHERE sp1.person_id = ?`, id).Scan(&total); err != nil {
@@ -294,7 +294,7 @@ func (h *handler) getPersonCollaborators(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`SELECT sp2.person_id, p.name, p.type, COUNT(*) AS cnt
+	rows, err := h.getDB().Query(`SELECT sp2.person_id, p.name, p.type, COUNT(*) AS cnt
 		FROM subject_persons sp1
 		JOIN subject_persons sp2 ON sp2.subject_id = sp1.subject_id AND sp2.person_id <> sp1.person_id
 		JOIN persons p ON p.id = sp2.person_id

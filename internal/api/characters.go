@@ -106,12 +106,12 @@ func (h *handler) searchCharacters(c *gin.Context) {
 	if fullScan {
 		countCol = ", COUNT(*) OVER()"
 		totalPtr = &total
-	} else if err := h.db.QueryRow("SELECT COUNT(*) FROM characters c"+where, args...).Scan(&total); err != nil {
+	} else if err := h.getDB().QueryRow("SELECT COUNT(*) FROM characters c"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
 
-	rows, err := h.db.Query(`SELECT c.id, c.name, c.name_cn, c.role, c.collects, c.comments`+countCol+`
+	rows, err := h.getDB().Query(`SELECT c.id, c.name, c.name_cn, c.role, c.collects, c.comments`+countCol+`
 		FROM characters c`+where+` ORDER BY c.id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
@@ -159,7 +159,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 
 	d := characterDetail{Subjects: []characterSubjectItem{}, CVs: []cvItem{}, Relations: []personRelationItem{}}
 	var rawInfobox string
-	err := h.db.QueryRow(`SELECT id, role, name, name_cn, infobox, summary, comments, collects
+	err := h.getDB().QueryRow(`SELECT id, role, name, name_cn, infobox, summary, comments, collects
 		FROM characters WHERE id = ?`, id).
 		Scan(&d.ID, &d.Role, &d.Name, &d.NameCN, &rawInfobox, &d.Summary, &d.Comments, &d.Collects)
 	if err != nil {
@@ -172,7 +172,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 	}
 
 	// 出演作品
-	srows, err := h.db.Query(`SELECT s.id, s.name, s.name_cn, s.type, sc.type, sc."order", s.date, s.score
+	srows, err := h.getDB().Query(`SELECT s.id, s.name, s.name_cn, s.type, sc.type, sc."order", s.date, s.score
 		FROM subject_characters sc
 		JOIN subjects s ON s.id = sc.subject_id
 		WHERE sc.character_id = ?
@@ -195,7 +195,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 
 	// 声优/演员（CV）。按人物去重：同一人物在不同作品/译配下会重复出现，
 	// 这里只保留每个人物一条（类型取最小值，主配 CV=0 优先）。
-	crows, err := h.db.Query(`SELECT pc.person_id, p.name, MIN(pc.type)
+	crows, err := h.getDB().Query(`SELECT pc.person_id, p.name, MIN(pc.type)
 		FROM person_characters pc
 		JOIN persons p ON p.id = pc.person_id
 		WHERE pc.character_id = ?
@@ -218,7 +218,7 @@ func (h *handler) getCharacter(c *gin.Context) {
 
 	// 角色关联（双向）。仅取 crt 行：crt 行两端都是角色；
 	// prsn 行属于人物域，ID 与角色相互独立、不可按数字混用。
-	rrows, err := h.db.Query(`SELECT pr.relation_type, pr.related_person_id, COALESCE(c.name, ''), COALESCE(c.role, 0)
+	rrows, err := h.getDB().Query(`SELECT pr.relation_type, pr.related_person_id, COALESCE(c.name, ''), COALESCE(c.role, 0)
 		FROM person_relations pr
 		JOIN characters c ON c.id = pr.related_person_id
 		WHERE pr.person_type = 'crt' AND pr.person_id = ?

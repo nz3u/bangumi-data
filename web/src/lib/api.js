@@ -27,6 +27,26 @@ export function stats() {
   return request('/stats')
 }
 
+export function openStatsStream(onStats, onError) {
+  const url = new URL('/api/stats/stream', window.location.origin)
+  const es = new EventSource(url.toString())
+  es.addEventListener('stats', (e) => {
+    try { const d = JSON.parse(e.data); onStats(d) } catch {}
+  })
+  es.onerror = (e) => { if (onError) onError(e) }
+  return () => es.close()
+}
+
+export function openSystemStream(onSystem, onError) {
+  const url = new URL('/api/system/stream', window.location.origin)
+  const es = new EventSource(url.toString())
+  es.addEventListener('system', (e) => {
+    try { const d = JSON.parse(e.data); onSystem(d) } catch {}
+  })
+  es.onerror = (e) => { if (onError) onError(e) }
+  return () => es.close()
+}
+
 // 数据库版本与上游最新导出对比（右下角徽标与更新提醒）
 export function dbInfo() {
   return request('/dbinfo')
