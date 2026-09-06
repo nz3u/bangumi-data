@@ -1,10 +1,97 @@
 <script>
+  import { onMount } from 'svelte'
   import { fmtScore, fmtRank, fmtDate, fmtFavorite } from '../lib/format.js'
-  import { openDetail } from '../lib/detail.svelte.js'
+  import { getSubjectEpisodes } from '../lib/api.js'
+  import { loadConstants } from '../lib/constants.js'
+  import { openDetail, closeDetail } from '../lib/detail.svelte.js'
+  import { goToTab } from '../lib/nav.js'
   import { externalUrl } from '../lib/settings.svelte.js'
   import EntityPic from './EntityPic.svelte'
 
   let { d, id } = $props()
+
+  // ---- 章节区块 ----
+  // 有关章节的条目（动画/电视剧/音乐碟轨等）联合查询按类型+集数排序展示；
+  // 游戏/电影等无章节的条目不渲染该区块。长列表只取前 EPS_LIMIT 条，
+  // 其余引导到「章节搜索」页（已按条目 ID 预填）。
+  const EPS_LIMIT = 200
+
+  let eps = $state(null) // null = 加载中；[] = 加载结束（含失败）
+  let epTypes = $state({})
+
+  $effect(() => {
+    void id
+    eps = null
+    if (!d?.episode_count) return
+    getSubjectEpisodes(id, { size: EPS_LIMIT, sort: 'type' })
+      .then((r) => (eps = r.items ?? []))
+      .catch(() => (eps = []))
+  })
+
+  onMount(async () => {
+    const c = await loadConstants().catch(() => null)
+    if (c) epTypes = c.episode_types ?? {}
+  })
+
+  // 章节类型分组（0正篇 1SP 2OP 3ED 4Trailer 5MAD 6其他），仅返回到的条目参与分组；
+  // 只有正篇时平铺展示，否则按类型分组加小标题。
+  // 连续的空章节（无标题且无日期/时长/简介）压缩为一条区间行（如「14–16（无标题 ×3）」），
+  // 避免海螺小姐这类长篇条目的空章节把抽屉占满；带任一内容的无标题章节仍单独成行。
+  const epGroups = $derived.by(() => {
+    if (!eps?.length) return []
+    const map = new Map()
+    for (const e of eps) {
+      if (!map.has(e.type)) map.set(e.type, [])
+      map.get(e.type).push(e)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([type, list]) => ({ type, segments: compressBlankEps(list), count: list.length }))
+  })
+
+  function isBlankEp(e) {
+    return !e.name && !e.name_cn && !e.description && !e.airdate && !e.duration
+  }
+
+  // 顺序扫描展示列表，把连续空章节合并为 { kind: 'run', items } 段
+  function compressBlankEps(list) {
+    const out = []
+    for (const e of list) {
+      if (isBlankEp(e)) {
+        const last = out[out.length - 1]
+        if (last?.kind === 'run') last.items.push(e)
+        else out.push({ kind: 'run', items: [e] })
+      } else {
+        out.push({ kind: 'ep', ep: e })
+      }
+    }
+    return out
+  }
+
+  function runLabel(items) {
+    const fmt = (s) => (Number.isInteger(s) ? String(s) : s.toFixed(1))
+    const first = items[0].sort
+    const last = items[items.length - 1].sort
+    if (items.length === 1) return `${fmt(first)}（无标题）`
+    if (first === last) return `无标题 ×${items.length}`
+    return `${fmt(first)}–${fmt(last)}（无标题 ×${items.length}）`
+  }
+
+  function epTypeLabel(t) {
+    return epTypes[t] ?? (t === 0 ? '正篇' : `类型 ${t}`)
+  }
+
+  // 集数显示：整数不带小数点，非整数（如 1.5 话）保留一位小数
+  function epSortLabel(s) {
+    if (!s) return ''
+    return Number.isInteger(s) ? String(s) : s.toFixed(1)
+  }
+
+  function openEpisodesTab() {
+    const sid = id
+    closeDetail()
+    goToTab('/episodes', { subjectId: sid })
+  }
 </script>
 
 <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4" data-sec-label="信息">
@@ -39,6 +126,61 @@
   <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">简介</h4>
   <p class="whitespace-pre-wrap text-sm leading-relaxed">{d.summary || '（无简介）'}</p>
 </section>
+
+{#if d.episode_count > 0}
+  {#snippet epSegmentList(segments)}
+    <ul class="space-y-0.5 text-sm">
+      {#each segments as seg (seg.kind === 'ep' ? seg.ep.id : `run-${seg.items[0].id}`)}
+        {#if seg.kind === 'ep'}
+          {@const e = seg.ep}
+          <li class="text-neutral-700 dark:text-neutral-300" title={e.description}>
+            {#if epSortLabel(e.sort)}<span class="mr-1 text-neutral-400 tabular-nums">{epSortLabel(e.sort)}.</span>{/if}
+            <span class="text-neutral-500">{e.name_cn || e.name || '（无标题）'}</span>
+            {#if e.name_cn && e.name}<small class="ml-1 text-xs text-neutral-400 dark:text-neutral-500">{e.name}</small>{/if}
+            {#if e.airdate}<small class="ml-1.5 text-xs text-neutral-400 dark:text-neutral-500">{e.airdate}</small>{/if}
+            {#if e.duration}<small class="ml-1.5 text-xs text-neutral-400 dark:text-neutral-500">{e.duration}</small>{/if}
+          </li>
+        {:else}
+          <li class="text-neutral-400 dark:text-neutral-500" title="连续无标题章节（无日期/时长/简介）">
+            {runLabel(seg.items)}
+          </li>
+        {/if}
+      {/each}
+    </ul>
+  {/snippet}
+
+  <section class="mb-4" data-sec-label="章节">
+    <div class="divider-short"></div>
+    <h4 class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">章节（{d.episode_count}）</h4>
+    {#if eps === null}
+      <div class="space-y-1.5 py-1">
+        {#each Array.from({ length: 5 }) as _, i}
+          <div class="skeleton h-4" style:width="{92 - (i % 3) * 12}%"></div>
+        {/each}
+      </div>
+    {:else if eps.length === 0}
+      <p class="text-sm text-neutral-500">章节列表加载失败</p>
+    {:else}
+      {#if epGroups.length === 1 && epGroups[0].type === 0}
+        {@render epSegmentList(epGroups[0].segments)}
+      {:else}
+        {#each epGroups as g (g.type)}
+          <div class="mt-2">
+            <h5 class="mb-0.5 text-xs text-neutral-400 dark:text-neutral-500">{epTypeLabel(g.type)}（{g.count}）</h5>
+            {@render epSegmentList(g.segments)}
+          </div>
+        {/each}
+      {/if}
+      {#if d.episode_count > eps.length}
+        <button
+          type="button"
+          class="mt-1.5 inline-block cursor-pointer text-xs text-sakura-600 hover:underline dark:text-sakura-400"
+          onclick={openEpisodesTab}
+        >已显示前 {eps.length} 条，查看全部 {d.episode_count} 条章节 →</button>
+      {/if}
+    {/if}
+  </section>
+{/if}
 
 {#if d.relations.length}
   <section class="mb-4" data-sec-label="关联">

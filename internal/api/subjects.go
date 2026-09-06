@@ -535,6 +535,8 @@ func (h *handler) getSubject(c *gin.Context) {
 }
 
 // getSubjectEpisodes 条目章节列表。
+// sort=type 时按章节类型分组排序（0正篇在最前，SP/OP/ED 依次跟随），
+// 供条目抽屉的章节区块使用；默认保持按集数（sort）排序。
 func (h *handler) getSubjectEpisodes(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -551,6 +553,11 @@ func (h *handler) getSubjectEpisodes(c *gin.Context) {
 	}
 	where := " WHERE " + strings.Join(conds, " AND ")
 
+	orderBy := " ORDER BY sort, id"
+	if c.Query("sort") == "type" {
+		orderBy = " ORDER BY type, sort, id"
+	}
+
 	var total int64
 	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM episodes"+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
@@ -559,7 +566,7 @@ func (h *handler) getSubjectEpisodes(c *gin.Context) {
 
 	queryArgs := append(args, size, (page-1)*size)
 	rows, err := h.getDB().Query(`SELECT id, name, name_cn, description, airdate, disc, duration, subject_id, sort, type
-		FROM episodes`+where+` ORDER BY sort, id LIMIT ? OFFSET ?`, queryArgs...)
+		FROM episodes`+where+orderBy+` LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return

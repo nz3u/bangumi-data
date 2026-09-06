@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"bangumi-subject-go/internal/norm"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -26,6 +28,11 @@ CREATE TABLE characters (id INTEGER PRIMARY KEY, role INTEGER NOT NULL, name TEX
 CREATE VIRTUAL TABLE subjects_fts USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE persons_fts USING fts5(name, tokenize = 'trigram');
 CREATE VIRTUAL TABLE characters_fts USING fts5(name, tokenize = 'trigram');
+CREATE TABLE episodes (id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+    name_cn TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+    airdate TEXT NOT NULL DEFAULT '', disc INTEGER NOT NULL DEFAULT 0,
+    duration TEXT NOT NULL DEFAULT '', subject_id INTEGER NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0, type INTEGER NOT NULL DEFAULT 0);
 `
 
 const personInfobox = `{{Infobox Person
@@ -61,10 +68,55 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 	mustExec(t, conn, `INSERT INTO subjects (id, type, name, tags, meta_tags) VALUES
 		(10, 2, 'a', '[{"name":"奇幻","count":3},{"name":"原创","count":1}]', '["小说"]'),
 		(11, 2, 'b', '[{"name":"奇幻","count":2}]', '["小说","社畜"]')`)
+	mustExec(t, conn, `INSERT INTO subjects (id, type, name, summary, infobox, tags, meta_tags) VALUES
+		(12, 2, 'A&amp;Bテスト', '剧情&amp;&lt;战斗&gt;简介', '{{Infobox Anime
+|别名={
+[X&amp;Y]
+}
+}}', '[]', '[]')`)
+	mustExec(t, conn, `INSERT INTO episodes (id, name, name_cn, subject_id, sort, type) VALUES
+		(100, '第1話：狂乱の旗', '第1话：狂乱之旗', 10, 1, 0),
+		(101, 'オープニング', '', 10, 0, 2),
+		(102, 'C&amp;D&#39;E', '', 12, 1, 0)`)
+	mustExec(t, conn, `INSERT INTO persons (id, name, type, career, infobox) VALUES
+		(3, 'studio&amp;co', 2, '[]', '{{Infobox Person
+|简体中文名= A&amp;B工作室
+|性别= 男
+}}')`)
 
 	if err := UpgradeSchema(conn); err != nil {
 		t.Fatalf("UpgradeSchema: %v", err)
 	}
+
+	// 章节检索列应被回填（name + name_cn 归一化拼接，标点被丢弃）
+	var normCol string
+	if err := conn.QueryRow(`SELECT search_norm FROM episodes WHERE id = 100`).Scan(&normCol); err != nil || normCol != "第1話狂乱の旗第1话狂乱之旗" {
+		t.Errorf("episodes.search_norm = %q, err=%v, want 第1話狂乱の旗第1话狂乱之旗", normCol, err)
+	}
+	assertFTSHit(t, conn, "episodes_fts", "狂乱之旗", 100)
+
+	// HTML 实体应被解码，派生列（aliases/search_norm/name_cn）随解码后的文本重算
+	var name, summary, aliases, searchNorm string
+	if err := conn.QueryRow(`SELECT name, summary, aliases, search_norm FROM subjects WHERE id = 12`).Scan(&name, &summary, &aliases, &searchNorm); err != nil {
+		t.Fatalf("查询 subjects 12: %v", err)
+	}
+	if name != "A&Bテスト" || summary != "剧情&<战斗>简介" || aliases != "X&Y" {
+		t.Errorf("subjects 12 解码结果 = (%q, %q, %q), want (A&Bテスト, 剧情&<战斗>简介, X&Y)", name, summary, aliases)
+	}
+	if want := norm.Join("A&Bテスト", "", "X&Y"); searchNorm != want {
+		t.Errorf("subjects 12 search_norm = %q, want %q", searchNorm, want)
+	}
+	if err := conn.QueryRow(`SELECT name, search_norm FROM episodes WHERE id = 102`).Scan(&name, &searchNorm); err != nil || name != "C&D'E" {
+		t.Errorf("episodes 102 解码结果 = (%q, %v), want (C&D'E)", name, err)
+	}
+	if searchNorm != "cde" {
+		t.Errorf("episodes 102 search_norm = %q, want cde", searchNorm)
+	}
+	var pName, pNameCN string
+	if err := conn.QueryRow(`SELECT name, name_cn FROM persons WHERE id = 3`).Scan(&pName, &pNameCN); err != nil || pName != "studio&co" || pNameCN != "A&B工作室" {
+		t.Errorf("persons 3 解码结果 = (%q, %q, %v), want (studio&co, A&B工作室)", pName, pNameCN, err)
+	}
+	assertFTSHit(t, conn, "subjects_fts", "テスト", 12)
 
 	var nameCN string
 	if err := conn.QueryRow(`SELECT name_cn FROM persons WHERE id = 1`).Scan(&nameCN); err != nil || nameCN != "宫崎骏" {
@@ -86,14 +138,18 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 		}
 	}
 
-	// 幂等：再次调用为空操作且不破坏数据
+	// 幂等：再次调用为空操作且不破坏数据（含已解码的实体行）
 	if err := UpgradeSchema(conn); err != nil {
 		t.Fatalf("UpgradeSchema 二次调用: %v", err)
 	}
 	if err := conn.QueryRow(`SELECT name_cn FROM persons WHERE id = 1`).Scan(&nameCN); err != nil || nameCN != "宫崎骏" {
 		t.Errorf("二次升级后 persons.name_cn = %q, err=%v", nameCN, err)
 	}
+	if err := conn.QueryRow(`SELECT name FROM subjects WHERE id = 12`).Scan(&name); err != nil || name != "A&Bテスト" {
+		t.Errorf("二次升级后 subjects 12.name = %q, err=%v, want A&Bテスト", name, err)
+	}
 	assertFTSHit(t, conn, "persons_fts", "宫崎骏", 1)
+	assertFTSHit(t, conn, "episodes_fts", "狂乱之旗", 100)
 
 	// 标签派生表应被构建且计数正确（重复调用不叠加）
 	assertTagAgg(t, conn, "subject_tags_agg", "奇幻", 2)

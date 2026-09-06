@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     duration    TEXT NOT NULL DEFAULT '',
     subject_id  INTEGER NOT NULL,
     sort        INTEGER NOT NULL DEFAULT 0,
-    type        INTEGER NOT NULL DEFAULT 0
+    type        INTEGER NOT NULL DEFAULT 0,
+    search_norm TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS subject_relations (
@@ -180,6 +181,8 @@ CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
 CREATE INDEX IF NOT EXISTS idx_characters_name_cn ON characters(name_cn);
 CREATE INDEX IF NOT EXISTS idx_episodes_subject ON episodes(subject_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_subject_sort ON episodes(subject_id, sort);
+CREATE INDEX IF NOT EXISTS idx_episodes_type    ON episodes(type);
+CREATE INDEX IF NOT EXISTS idx_episodes_airdate ON episodes(airdate);
 CREATE INDEX IF NOT EXISTS idx_sr_subject ON subject_relations(subject_id);
 CREATE INDEX IF NOT EXISTS idx_sr_related ON subject_relations(related_subject_id);
 CREATE INDEX IF NOT EXISTS idx_sp_subject  ON subject_persons(subject_id);
@@ -201,6 +204,8 @@ CREATE INDEX IF NOT EXISTS idx_pr_related ON person_relations(person_type, relat
 const ensureSQL = `
 CREATE INDEX IF NOT EXISTS idx_sp_subj_person ON subject_persons(subject_id, person_id);
 CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, person_id);
+CREATE INDEX IF NOT EXISTS idx_episodes_type    ON episodes(type);
+CREATE INDEX IF NOT EXISTS idx_episodes_airdate ON episodes(airdate);
 `
 
 // ftsSQL 全文搜索虚拟表。trigram tokenizer 支持中文子串匹配（>=3 字符走索引）。
@@ -209,6 +214,8 @@ CREATE INDEX IF NOT EXISTS idx_pc_subj_person ON person_characters(subject_id, p
 // 条目表只索引 search_norm 一列：它是 name + name_cn + aliases 经 norm.Fold
 // 归一化后的串，索引与查询同口径，因此能命中"被符号切断"（少女歌剧 -> 少女☆歌剧）
 // 与"只在别名中出现"（Kaguya Hime）的写法。单列也让索引体积与两列原文相当。
+// 章节表同理只索引归一化后的 name + name_cn；章节搜索命中所属条目标题的
+// 部分由查询侧复用 subjects_fts 完成（见 api.searchEpisodes），不重复存储。
 const ftsSQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS subjects_fts
     USING fts5(search_norm, tokenize = 'trigram');
@@ -216,14 +223,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
     USING fts5(name, name_cn, tokenize = 'trigram');
+CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts
+    USING fts5(search_norm, tokenize = 'trigram');
 `
 
 // ftsPopulateSQL 集合式填充 FTS：单条 INSERT...SELECT 在 SQLite 内部完成，
 // 避免 Go 侧逐行 Exec 的开销与 trigram 分词的往返成本。
+// 章节约 21% 行标题为空（多为音乐碟轨），跳过以减小索引体积。
 const ftsPopulateSQL = `
 INSERT INTO subjects_fts(rowid, search_norm) SELECT id, search_norm FROM subjects;
 INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
 INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
+INSERT INTO episodes_fts(rowid, search_norm) SELECT id, search_norm FROM episodes WHERE search_norm <> '';
 `
 
 // ftsPersonCharPopulateSQL 仅重建人物/角色 FTS 时的填充语句（升级迁移用）。
@@ -251,6 +262,17 @@ const ftsSubjectPopulateSQL = `
 INSERT INTO subjects_fts(rowid, search_norm) SELECT id, search_norm FROM subjects;
 `
 
+// ftsEpisodesSQL 仅章节 FTS 的建表语句（升级迁移用）。
+const ftsEpisodesSQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts
+    USING fts5(search_norm, tokenize = 'trigram');
+`
+
+// ftsEpisodesPopulateSQL 仅重建章节 FTS 时的填充语句（升级迁移用）。
+const ftsEpisodesPopulateSQL = `
+INSERT INTO episodes_fts(rowid, search_norm) SELECT id, search_norm FROM episodes WHERE search_norm <> '';
+`
+
 // DropAll 删除全部业务表（全量重建导入时调用）。
 const dropSQL = `
 DROP TABLE IF EXISTS subjects;
@@ -265,6 +287,7 @@ DROP TABLE IF EXISTS person_relations;
 DROP TABLE IF EXISTS subjects_fts;
 DROP TABLE IF EXISTS persons_fts;
 DROP TABLE IF EXISTS characters_fts;
+DROP TABLE IF EXISTS episodes_fts;
 DROP TABLE IF EXISTS subject_tags_agg;
 DROP TABLE IF EXISTS subject_meta_tags_agg;
 DROP TABLE IF EXISTS subject_tags_map;
@@ -294,7 +317,8 @@ func FinalizeSchema(conn *sql.DB) error {
 	}
 	return ExecMulti(conn,
 		`INSERT OR REPLACE INTO schema_meta(key, value)
-		 VALUES ('name_cn_backfilled', '1'), ('tag_stats_built', '1'), ('tag_maps_built', '1')`)
+		 VALUES ('name_cn_backfilled', '1'), ('tag_stats_built', '1'), ('tag_maps_built', '1'),
+		        ('episodes_fts_built', '1'), ('entities_decoded', '1')`)
 }
 
 // EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。
