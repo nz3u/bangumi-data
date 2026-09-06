@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,30 +48,39 @@ const episodeSubjectCols = `s.id, s.type, s.name, s.name_cn, s.platform, s.date`
 func (h *handler) searchEpisodes(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
-		conds     []string
-		args      []any
-		tierOrder string // 命中按匹配位置分级排序（仅有关键词时启用）
-		tierArgs  []any
+		conds        []string
+		args         []any
+		tierOrder    string // 命中按匹配位置分级排序（仅长关键词时启用）
+		tierArgs     []any
+		usesSubjects bool   // 条件是否引用条目列（决定计数是否需要 JOIN）
+		shortQ       bool   // 短关键词（<3 字符）：无法走 trigram 索引，走命中集临时表
+		qn           string
 	)
 
 	if q != "" {
 		// 查询词与索引同口径归一化，因此「少女歌剧」能命中「少女☆歌剧」。
 		// 全为符号的查询词不参与索引，按无匹配处理。
-		qn := norm.Fold(q)
+		qn = norm.Fold(q)
 		if qn == "" {
 			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
 			return
 		}
-		// 双路检索：章节自身标题走 episodes_fts，所属条目标题（原名/中文名/别名）
-		// 复用 subjects_fts，OR 合并。两个子查询不依赖外层、各自走 trigram 索引
-		// （>=3 字符；更短自动退化为顺序扫描），由 multi-index OR 分别经主键与
-		// idx_episodes_subject 索引取候选，代价与命中集成正比，无需 Go 侧
-		// 先取命中集（避免超长 IN 列表与两倍往返）。
-		like := "%" + qn + "%"
-		conds = append(conds,
-			"(e.id IN (SELECT rowid FROM episodes_fts WHERE search_norm LIKE ?)"+
-				" OR e.subject_id IN (SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?))")
-		args = append(args, like, like)
+		if utf8.RuneCountInString(qn) >= ftsMinRunes {
+			// 双路检索：章节自身标题走 episodes_fts，所属条目标题（原名/中文名/别名）
+			// 复用 subjects_fts，OR 合并。两个子查询不依赖外层、各自走 trigram 索引，
+			// 由 multi-index OR 分别经主键与 idx_episodes_subject 索引取候选，
+			// 代价与命中集成正比，无需 Go 侧先取命中集。
+			like := "%" + qn + "%"
+			conds = append(conds,
+				"(e.id IN (SELECT rowid FROM episodes_fts WHERE search_norm LIKE ?)"+
+					" OR e.subject_id IN (SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?))")
+			args = append(args, like, like)
+		} else {
+			// <3 字符的查询词构不成 trigram，FTS 的 LIKE 会退化为内容表全扫描，
+			// 且「计数+取数」会扫描两遍。改走命中集临时表（见下方 short 分支）。
+			shortQ = true
+		}
+		// 分级排序（章节标题命中 > 条目标题命中）对长短查询词语义一致
 		tierOrder, tierArgs = episodeTierOrder(q)
 	}
 
@@ -81,6 +91,7 @@ func (h *handler) searchEpisodes(c *gin.Context) {
 	if v, ok := parseIntQuery(c, "type"); ok {
 		conds = append(conds, "s.type = ?")
 		args = append(args, v)
+		usesSubjects = true
 	}
 	if v, ok := parseIntQuery(c, "ep_type"); ok {
 		conds = append(conds, "e.type = ?")
@@ -105,8 +116,15 @@ func (h *handler) searchEpisodes(c *gin.Context) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
+	// 计数来源：条件未引用条目列时无需 LEFT JOIN——SQLite 不会自动消除该连接，
+	// 170 万行逐行主键回表 subjects 是浏览页计数的主要耗时（无 JOIN 时走覆盖索引仅毫秒级）。
+	countFrom := " FROM episodes e"
+	if usesSubjects {
+		countFrom += " LEFT JOIN subjects s ON s.id = e.subject_id"
+	}
+
 	// 排序。sort 为空：有关键词时分级 + 条目人气（同条目内按类型/集数聚在一起），
-	// 无关键词时按 ID 序。popularity 排序将无章节正篇的碟轨类条目同样按收藏降序。
+	// 无关键词时按 ID 序。
 	order := strings.ToLower(c.DefaultQuery("order", "asc"))
 	if order != "desc" {
 		order = "asc"
@@ -134,6 +152,11 @@ func (h *handler) searchEpisodes(c *gin.Context) {
 		orderBy = tierOrder + ", " + orderBy
 	}
 
+	if shortQ {
+		h.searchEpisodesShort(c, qn, conds, args, tierArgs, usesSubjects, orderBy, page, size)
+		return
+	}
+
 	queryArgs := make([]any, 0, len(args)+len(tierArgs)+2)
 	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, tierArgs...)
@@ -144,7 +167,7 @@ func (h *handler) searchEpisodes(c *gin.Context) {
 		where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
 
 	var total int64
-	if err := h.getDB().QueryRow("SELECT COUNT(*) FROM episodes e LEFT JOIN subjects s ON s.id = e.subject_id"+where, args...).Scan(&total); err != nil {
+	if err := h.getDB().QueryRow("SELECT COUNT(*)"+countFrom+where, args...).Scan(&total); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}
@@ -166,6 +189,96 @@ func (h *handler) searchEpisodes(c *gin.Context) {
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	respOK(c, listResp{Total: total, Page: page, Size: size, Items: items})
+}
+
+// searchEpisodesShort 短关键词（<3 字符）的章节检索：
+// 短词构不成 trigram，FTS 的 LIKE 退化为内容表全扫描，且「计数 + 取数」
+// 会把同样的扫描做两遍。这里用临时表一次性物化命中集（两路扫描各一遍），
+// 计数退化为命中集行数（无筛选条件时为 O(1) 索引计数），取数按需分页；
+// 临时表按连接隔离，事务固定单连接，并发请求互不干扰。
+func (h *handler) searchEpisodesShort(c *gin.Context, qn string, conds []string, args, tierArgs []any, usesSubjects bool, orderBy string, page, size int) {
+	tx, err := h.getDB().Begin()
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	defer tx.Rollback()
+
+	like := "%" + qn + "%"
+	steps := []struct {
+		sql  string
+		args []any
+	}{
+		{`CREATE TEMP TABLE IF NOT EXISTS ep_hits (id INTEGER PRIMARY KEY)`, nil},
+		{`DELETE FROM ep_hits`, nil},
+		// 章节自身标题命中
+		{`INSERT INTO ep_hits(id) SELECT rowid FROM episodes_fts WHERE search_norm LIKE ?`, []any{like}},
+		// 所属条目标题命中（原名/中文名/别名，复用 subjects_fts）展开为章节
+		{`INSERT OR IGNORE INTO ep_hits(id) SELECT e.id FROM episodes e
+			JOIN subjects_fts f ON f.rowid = e.subject_id WHERE f.search_norm LIKE ?`, []any{like}},
+	}
+	for _, st := range steps {
+		if _, err := tx.Exec(st.sql, st.args...); err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+	}
+
+	var where string
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	// 计数：无筛选条件时直接数命中集；带筛选时经命中集回表后过滤
+	countSQL := "SELECT COUNT(*) FROM ep_hits"
+	if len(conds) > 0 {
+		countSQL = "SELECT COUNT(*) FROM ep_hits h JOIN episodes e ON e.id = h.id"
+		if usesSubjects {
+			countSQL += " LEFT JOIN subjects s ON s.id = e.subject_id"
+		}
+		countSQL += where
+	}
+	var total int64
+	if err := tx.QueryRow(countSQL, args...).Scan(&total); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+
+	dataSQL := "SELECT e.id, e.name, e.name_cn, e.description, e.airdate, e.disc, e.duration, e.sort, e.type, " +
+		episodeSubjectCols + " FROM ep_hits h JOIN episodes e ON e.id = h.id" +
+		" LEFT JOIN subjects s ON s.id = e.subject_id" + where +
+		" ORDER BY " + orderBy + " LIMIT ? OFFSET ?"
+
+	queryArgs := make([]any, 0, len(args)+len(tierArgs)+2)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, tierArgs...)
+	queryArgs = append(queryArgs, size, (page-1)*size)
+
+	rows, err := tx.Query(dataSQL, queryArgs...)
+	if err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := make([]*episodeBrief, 0, size)
+	for rows.Next() {
+		item, err := h.scanEpisodeBrief(rows)
+		if err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		fail(c, 500, err.Error())
 		return
 	}

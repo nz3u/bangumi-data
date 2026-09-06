@@ -265,6 +265,8 @@ git push origin v0.2.0
 - `infobox` 的完整 wiki 语法解析（层级列表/嵌套模板等）尚未实现，当前只提取 `{{Infobox}}` 的 key/value；
   复杂语法可参考 [bangumi/wiki-parser-go](https://github.com/bangumi/wiki-parser-go) 扩展 `internal/wiki`。
 - 搜索使用 FTS5 trigram：≥3 字符走索引，短查询退化为全表扫描，量级上（百万行）可接受。
+  章节搜索对短查询做了专门优化：命中集临时表单次扫描（计数与取数共用，不再扫两遍），
+  无检索词的浏览计数也不走 LEFT JOIN（SQLite 不消除该连接，170 万行逐行回表是浏览页耗时主因）。
   条目检索把 name + name_cn + infobox 别名归一化（去符号、全角转半角、小写）后存入
   `subjects.search_norm` 单列索引，查询词同口径归一化，因此「少女歌剧」能命中「少女☆歌剧」、
   「Kaguya Hime」能命中别名「Chou Kaguya-hime!」；查询统一走 `LIKE '%x%'`，
