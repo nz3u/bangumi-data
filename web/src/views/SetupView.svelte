@@ -19,7 +19,8 @@
   let needsAuth = $state(false)
   let authed = $state(false)
 
-  let isUpdating = $derived(status?.state === 'updating')
+  // 数据更新与结构迁移都处于维护模式：按钮禁用、显示进度
+  let isUpdating = $derived(status?.state === 'updating' || status?.state === 'migrating')
   let dbExists = $derived(status?.db_exists ?? db?.database != null)
   let updateAvailable = $derived(db?.update_available === true)
 

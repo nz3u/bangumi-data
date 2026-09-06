@@ -29,16 +29,18 @@ const tagMapsBuilt = "tag_maps_built"
 const episodesFTSBuilt = "episodes_fts_built"
 const entitiesDecoded = "entities_decoded"
 
-// UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS
-// -> 补建条目检索列（aliases/search_norm）并重建条目 FTS
-// -> 构建标签/元标签聚合表。
-// 新导入的库各步骤均检测为已完成，直接返回（仅两次 pragma/master 查询开销）。
+// UpgradeSchema 幂等升级旧库结构。步骤顺序经过安排：
+// 先补列、解码上游 HTML 实体，再回填派生列并构建 FTS——
+// 使每张 FTS 只构建一次，且内容基于解码后的最终文本；
+// 空库（尚未导入）各步骤自动跳过且不产生「0 行」日志。
+// 各步骤均以 schema_meta 标记或列结构判断是否已完成，
+// 新导入的库（FinalizeSchema 已置全部标记）仅做毫秒级检查。
 func UpgradeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, `CREATE TABLE IF NOT EXISTS schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
 		return err
 	}
 
-	// 1. 补列
+	// 1. 补列（文本解码与派生列回填的前置条件），并同步补建配套索引
 	altered := false
 	for _, table := range []string{"persons", "characters"} {
 		has, err := tableHasColumn(conn, table, "name_cn")
@@ -58,26 +60,101 @@ func UpgradeSchema(conn *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_characters_name_cn ON characters(name_cn);`); err != nil {
 		return fmt.Errorf("补建 name_cn 索引: %w", err)
 	}
-
-	// 2. 回填「简体中文名」（新库导入时已写入，由 FinalizeSchema 置标记跳过）
-	done, err := metaGet(conn, nameCNBackfillDone)
-	if err != nil {
-		return err
+	subjectAdded := false
+	for _, col := range []string{"aliases", "search_norm"} {
+		has, err := tableHasColumn(conn, "subjects", col)
+		if err != nil {
+			return fmt.Errorf("检查 subjects.%s: %w", col, err)
+		}
+		if !has {
+			if _, err := conn.Exec(fmt.Sprintf(`ALTER TABLE subjects ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)); err != nil {
+				return fmt.Errorf("补建 subjects.%s: %w", col, err)
+			}
+			log.Printf("已为 subjects 补建 %s 列", col)
+			subjectAdded = true
+		}
 	}
-	if altered || done != "1" {
+	hasEps, err := tableExists(conn, "episodes")
+	if err != nil {
+		return fmt.Errorf("检查 episodes: %w", err)
+	}
+	epAdded := false
+	if hasEps {
+		hasNorm, err := tableHasColumn(conn, "episodes", "search_norm")
+		if err != nil {
+			return fmt.Errorf("检查 episodes.search_norm: %w", err)
+		}
+		if !hasNorm {
+			if _, err := conn.Exec(`ALTER TABLE episodes ADD COLUMN search_norm TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("补建 episodes.search_norm: %w", err)
+			}
+			log.Println("已为 episodes 补建 search_norm 列")
+			epAdded = true
+		}
+	}
+
+	// 2. HTML 实体解码：上游 wiki 数据的文本字段带 MediaWiki 转义（&amp; &lt; &#39; …），
+	//    按原文存储会以「&amp;」形态原样显示，且破坏检索（归一化丢弃 "&" 后
+	//    "A&amp;B" 折叠为 "aampb"，按 "ab" 搜不到）。解码必须先于一切回填与
+	//    FTS 构建，使后续构建都基于解码后的文本（否则需要整体重建 FTS）。
+	//    解码函数会对变更行重算 aliases/search_norm/name_cn 派生列，
+	//    其余行的派生列由下方回填统一补齐。新导入的库在导入时已解码，
+	//    由 FinalizeSchema 置标记跳过。
+	if done, err := metaGet(conn, entitiesDecoded); err != nil {
+		return err
+	} else if done != "1" {
+		changed := int64(0)
+		for _, st := range []struct {
+			table string
+			fn    func(*sql.DB) (int64, error)
+		}{
+			{"subjects", decodeSubjectEntities},
+			{"episodes", decodeEpisodeEntities},
+			{"persons", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "persons") }},
+			{"characters", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "characters") }},
+			{"person_characters", decodePersonCharSummary},
+		} {
+			has, err := tableExists(conn, st.table)
+			if err != nil {
+				return fmt.Errorf("检查 %s: %w", st.table, err)
+			}
+			if !has {
+				continue
+			}
+			n, err := st.fn(conn)
+			if err != nil {
+				return fmt.Errorf("解码 HTML 实体: %w", err)
+			}
+			changed += n
+		}
+		if changed > 0 {
+			log.Printf("已解码 HTML 实体（&amp; 等）共 %d 行（耗时一次性，之后跳过）", changed)
+		}
+		if err := metaSet(conn, entitiesDecoded, "1"); err != nil {
+			return err
+		}
+	}
+
+	// 3. 回填「简体中文名」（解码后仍为空 infobox 的行；新库导入时已写入，
+	//    由 FinalizeSchema 置标记跳过）
+	if done, err := metaGet(conn, nameCNBackfillDone); err != nil {
+		return err
+	} else if altered || done != "1" {
 		for _, table := range []string{"persons", "characters"} {
 			n, err := backfillNameCN(conn, table)
 			if err != nil {
 				return fmt.Errorf("回填 %s.name_cn: %w", table, err)
 			}
-			log.Printf("已从 infobox 回填 %s.name_cn %d 行", table, n)
+			if n > 0 {
+				log.Printf("已从 infobox 回填 %s.name_cn %d 行", table, n)
+			}
 		}
 		if err := metaSet(conn, nameCNBackfillDone, "1"); err != nil {
 			return err
 		}
 	}
 
-	// 3. 人物/角色 FTS 缺少 name_cn 时重建
+	// 4. 人物/角色 FTS 缺少 name_cn 时重建（填充的是解码+回填后的最终文本）
 	rebuild := false
 	for _, table := range []string{"persons_fts", "characters_fts"} {
 		has, err := ftsHasColumn(conn, table, "name_cn")
@@ -98,40 +175,28 @@ func UpgradeSchema(conn *sql.DB) error {
 		if err := ExecMulti(conn, ftsPersonCharPopulateSQL); err != nil {
 			return err
 		}
-		log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
+		if tableRows(conn, "persons") > 0 || tableRows(conn, "characters") > 0 {
+			log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
+		}
 	}
 
-	// 4. 条目检索列与条目 FTS：
+	// 5. 条目检索列回填与条目 FTS：
 	//    subjects 原本只按 name / name_cn 建 trigram 索引，存在两类漏召回——
 	//    检索词被原名中的符号切断（「少女歌剧」匹配不到「少女☆歌剧」）、
 	//    检索词只出现在 infobox 的别名里（「Kaguya Hime」）。
-	//    改为补建 aliases（infobox 别名）与 search_norm（归一化后的可搜索文本），
+	//    补建 aliases（infobox 别名）与 search_norm（归一化后的可搜索文本），
 	//    并把 subjects_fts 重建为只索引 search_norm 的单列表。
 	//    68 万行一次性回填约需数十秒，完成后置标记跳过。
-	added := false
-	for _, col := range []string{"aliases", "search_norm"} {
-		has, err := tableHasColumn(conn, "subjects", col)
-		if err != nil {
-			return fmt.Errorf("检查 subjects.%s: %w", col, err)
-		}
-		if !has {
-			if _, err := conn.Exec(fmt.Sprintf(`ALTER TABLE subjects ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)); err != nil {
-				return fmt.Errorf("补建 subjects.%s: %w", col, err)
-			}
-			log.Printf("已为 subjects 补建 %s 列", col)
-			added = true
-		}
-	}
-	searchDone, err := metaGet(conn, subjectSearchBuilt)
-	if err != nil {
+	if done, err := metaGet(conn, subjectSearchBuilt); err != nil {
 		return err
-	}
-	if added || searchDone != "1" {
+	} else if subjectAdded || done != "1" {
 		n, err := backfillSubjectSearch(conn)
 		if err != nil {
 			return fmt.Errorf("回填 subjects 检索列: %w", err)
 		}
-		log.Printf("已从 infobox 回填 subjects.aliases/search_norm %d 行（耗时一次性，之后跳过）", n)
+		if n > 0 {
+			log.Printf("已从 infobox 回填 subjects.aliases/search_norm %d 行（耗时一次性，之后跳过）", n)
+		}
 		if err := metaSet(conn, subjectSearchBuilt, "1"); err != nil {
 			return err
 		}
@@ -150,10 +215,12 @@ func UpgradeSchema(conn *sql.DB) error {
 		if err := ExecMulti(conn, ftsSubjectPopulateSQL); err != nil {
 			return err
 		}
-		log.Println("已重建 subjects_fts（单列 search_norm）")
+		if tableRows(conn, "subjects") > 0 {
+			log.Println("已重建 subjects_fts（单列 search_norm）")
+		}
 	}
 
-	// 5. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
+	// 6. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
 	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开构建（新导入的库
 	//    由 FinalizeSchema 构建并置标记，此处直接跳过）。
 	//    聚合表与映射表使用独立标记：已发布版本只置过 tag_stats_built，
@@ -191,7 +258,9 @@ func UpgradeSchema(conn *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("构建标签派生表: %w", err)
 		}
-		log.Printf("已构建标签/元标签聚合与倒排映射表（聚合 %d 行、映射 %d 行，耗时一次性，之后跳过）", nAgg, nMap)
+		if nAgg+nMap > 0 {
+			log.Printf("已构建标签/元标签聚合与倒排映射表（聚合 %d 行、映射 %d 行，耗时一次性，之后跳过）", nAgg, nMap)
+		}
 		if err := metaSet(conn, tagStatsBuilt, "1"); err != nil {
 			return err
 		}
@@ -200,53 +269,34 @@ func UpgradeSchema(conn *sql.DB) error {
 		}
 	}
 
-	// 6. 章节检索列与章节 FTS：
-	//    episodes 补建 search_norm（归一化后的 name + name_cn），
-	//    并新建只索引该列的 episodes_fts。章节搜索中「命中所属条目标题」
-	//    的部分复用 subjects_fts（见 api.searchEpisodes），无需重复存储。
+	// 7. 章节检索列回填与章节 FTS：
+	//    episodes.search_norm（归一化后的 name + name_cn）已在步骤 1 补列，
+	//    此处回填空行并构建只索引该列的 episodes_fts。章节搜索中「命中所属
+	//    条目标题」的部分复用 subjects_fts（见 api.searchEpisodes），无需重复存储。
 	//    旧库一次性回填约 170 万行，需 1~2 分钟，完成后置标记跳过。
-	//    episodes 表不存在时（空库/纯旧测试库）跳过，待导入时统一构建。
-	hasEps, err := tableExists(conn, "episodes")
-	if err != nil {
-		return fmt.Errorf("检查 episodes: %w", err)
-	}
 	if hasEps {
-		hasNorm, err := tableHasColumn(conn, "episodes", "search_norm")
-		if err != nil {
-			return fmt.Errorf("检查 episodes.search_norm: %w", err)
-		}
-		epAdded := false
-		if !hasNorm {
-			if _, err := conn.Exec(`ALTER TABLE episodes ADD COLUMN search_norm TEXT NOT NULL DEFAULT ''`); err != nil {
-				return fmt.Errorf("补建 episodes.search_norm: %w", err)
-			}
-			log.Println("已为 episodes 补建 search_norm 列")
-			epAdded = true
-		}
 		ftsDone, err := metaGet(conn, episodesFTSBuilt)
 		if err != nil {
 			return err
 		}
-		rebuildFTS := false
-		if epAdded || ftsDone != "1" {
+		needsBackfill := epAdded || ftsDone != "1"
+		if needsBackfill {
 			n, err := backfillEpisodesSearch(conn)
 			if err != nil {
 				return fmt.Errorf("回填 episodes.search_norm: %w", err)
 			}
-			log.Printf("已回填 episodes.search_norm %d 行（耗时一次性，之后跳过）", n)
+			if n > 0 {
+				log.Printf("已回填 episodes.search_norm %d 行（耗时一次性，之后跳过）", n)
+			}
 			if err := metaSet(conn, episodesFTSBuilt, "1"); err != nil {
 				return err
 			}
-			rebuildFTS = true
 		}
 		hasEpsFTS, err := tableExists(conn, "episodes_fts")
 		if err != nil {
 			return fmt.Errorf("检查 episodes_fts: %w", err)
 		}
-		if !hasEpsFTS {
-			rebuildFTS = true
-		}
-		if rebuildFTS {
+		if needsBackfill || !hasEpsFTS {
 			if err := ExecMulti(conn, `DROP TABLE IF EXISTS episodes_fts;`); err != nil {
 				return err
 			}
@@ -256,66 +306,90 @@ func UpgradeSchema(conn *sql.DB) error {
 			if err := ExecMulti(conn, ftsEpisodesPopulateSQL); err != nil {
 				return err
 			}
-			log.Println("已重建 episodes_fts（单列 search_norm）")
+			if tableRows(conn, "episodes") > 0 {
+				log.Println("已构建 episodes_fts（单列 search_norm）")
+			}
 		}
-	}
-
-	// 7. HTML 实体解码：上游 wiki 数据的文本字段带 MediaWiki 转义（&amp; &lt; &#39; …），
-	//    按原文存储会以「&amp;」形态原样显示，且破坏检索（归一化丢弃 "&" 后
-	//    "A&amp;B" 折叠为 "aampb"，按 "ab" 搜不到）。一次性扫描含 '&' 的行解码，
-	//    重算派生列（aliases/search_norm/name_cn），有变更时重建全部 FTS。
-	//    新导入的库在导入时已解码，由 FinalizeSchema 置标记跳过。
-	done, err = metaGet(conn, entitiesDecoded)
-	if err != nil {
-		return err
-	}
-	if done != "1" {
-		changed := int64(0)
-		for _, st := range []struct {
-			table string
-			fn    func(*sql.DB) (int64, error)
-		}{
-			{"subjects", decodeSubjectEntities},
-			{"episodes", decodeEpisodeEntities},
-			{"persons", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "persons") }},
-			{"characters", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "characters") }},
-			{"person_characters", decodePersonCharSummary},
-		} {
-			has, err := tableExists(conn, st.table)
-			if err != nil {
-				return fmt.Errorf("检查 %s: %w", st.table, err)
-			}
-			if !has {
-				continue
-			}
-			n, err := st.fn(conn)
-			if err != nil {
-				return fmt.Errorf("解码 HTML 实体: %w", err)
-			}
-			changed += n
-		}
-		if changed > 0 {
-			// 派生列（search_norm 等）已随解码重算，FTS 需整体重建才能命中新文本
-			if err := ExecMulti(conn, `DROP TABLE IF EXISTS subjects_fts;
-				DROP TABLE IF EXISTS persons_fts;
-				DROP TABLE IF EXISTS characters_fts;
-				DROP TABLE IF EXISTS episodes_fts;`); err != nil {
-				return err
-			}
-			if err := ExecMulti(conn, ftsSQL); err != nil {
-				return err
-			}
-			if err := ExecMulti(conn, ftsPopulateSQL); err != nil {
-				return err
-			}
-			log.Println("已重建全部 FTS（实体解码后）")
-		}
-		if err := metaSet(conn, entitiesDecoded, "1"); err != nil {
-			return err
-		}
-		log.Printf("HTML 实体解码完成：更新 %d 行（耗时一次性，之后跳过）", changed)
 	}
 	return nil
+}
+
+// NeedsUpgrade 快速判断数据库是否需要执行结构迁移/回填（只读，毫秒级）。
+// serve 启动据此决定走同步快路径（无需迁移时的空操作检查），还是转入
+// 后台迁移并开启维护模式（避免迁移耗时阻塞站点访问）。
+// 空库（尚未导入）无需迁移——建表由 EnsureIndexes 负责，迁移在导入后进行。
+// 保守策略：拿不准一律返回 true，误报仅使本次检查走后台维护路径，
+// 漏报则退化为启动时同步执行；新增迁移步骤时须同步更新本函数的检查项。
+func NeedsUpgrade(conn *sql.DB) bool {
+	// 任一业务表缺失视为空库/全新库
+	for _, table := range []string{"subjects", "episodes", "persons", "characters"} {
+		has, err := tableExists(conn, table)
+		if err != nil || !has {
+			return false
+		}
+	}
+	// 空库无需迁移
+	if tableRows(conn, "subjects") == 0 {
+		return false
+	}
+	// 迁移标记任一缺失即需要
+	for _, flag := range []string{
+		nameCNBackfillDone, subjectSearchBuilt, tagStatsBuilt,
+		tagMapsBuilt, episodesFTSBuilt, entitiesDecoded,
+	} {
+		if done, err := metaGet(conn, flag); err != nil || done != "1" {
+			return true
+		}
+	}
+	// 迁移目标列缺失即需要
+	for _, tc := range [][2]string{
+		{"persons", "name_cn"}, {"characters", "name_cn"},
+		{"subjects", "aliases"}, {"subjects", "search_norm"},
+		{"episodes", "search_norm"},
+	} {
+		has, err := tableHasColumn(conn, tc[0], tc[1])
+		if err != nil || !has {
+			return true
+		}
+	}
+	// FTS 结构（列缺失或整表缺失时迁移会重建）
+	for _, fc := range [][2]string{
+		{"subjects_fts", "search_norm"},
+		{"persons_fts", "name_cn"}, {"characters_fts", "name_cn"},
+	} {
+		has, err := ftsHasColumn(conn, fc[0], fc[1])
+		if err != nil || !has {
+			return true
+		}
+	}
+	if has, err := tableExists(conn, "episodes_fts"); err != nil || !has {
+		return true
+	}
+	// 增量索引缺失即需要（与 ensureSQL 的清单保持一致）
+	for _, idx := range []string{
+		"idx_sp_subj_person", "idx_pc_subj_person",
+		"idx_episodes_type", "idx_episodes_airdate",
+	} {
+		has, err := indexExists(conn, idx)
+		if err != nil || !has {
+			return true
+		}
+	}
+	return false
+}
+
+// tableRows 返回表行数（表不存在时返回 0）。
+func tableRows(conn *sql.DB, table string) int64 {
+	var n int64
+	_ = conn.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n)
+	return n
+}
+
+// indexExists 检查索引是否存在。
+func indexExists(conn *sql.DB, name string) (bool, error) {
+	var n int64
+	err := conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&n)
+	return n > 0, err
 }
 
 // tableHasColumn 检查表是否存在某列（表不存在时返回 false）。
@@ -423,7 +497,7 @@ func backfillSubjectSearch(conn *sql.DB) (int64, error) {
 			return 0, err
 		}
 		scanned++
-		if scanned%200000 == 0 {
+		if len(updates) > 0 && scanned%200000 == 0 {
 			log.Printf("回填 subjects 检索列：已扫描 %d 行…", scanned)
 		}
 		aliases := wiki.ExtractAliasesText(infobox)
@@ -496,7 +570,7 @@ func backfillEpisodesSearch(conn *sql.DB) (int64, error) {
 			return 0, err
 		}
 		scanned++
-		if scanned%500000 == 0 {
+		if len(updates) > 0 && scanned%500000 == 0 {
 			log.Printf("回填 episodes 检索列：已扫描 %d 行…", scanned)
 		}
 		if name == "" && nameCN == "" {
@@ -790,7 +864,8 @@ func backfillNameCN(conn *sql.DB, table string) (int64, error) {
 			return 0, err
 		}
 		scanned++
-		if scanned%100000 == 0 {
+		// 心跳仅在确有回填产出时打印，避免无产出的全表扫描留下「0 行」痕迹
+		if len(updates) > 0 && scanned%100000 == 0 {
 			log.Printf("回填 %s.name_cn：已扫描 %d 行…", table, scanned)
 		}
 		if cn := wiki.ExtractNameCN(ib); cn != "" {
