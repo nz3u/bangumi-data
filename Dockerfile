@@ -15,11 +15,12 @@ ARG VERSION=dev
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 拷贝源码（common 子模块与 web/dist 前端均内嵌进二进制）
+# 拷贝源码（common 子模块与 web/dist 前端均内嵌进二进制；docs 为 swag 生成的 API 文档包）
 COPY embedded.go ./
 COPY cmd ./cmd
 COPY internal ./internal
 COPY common ./common
+COPY docs ./docs
 COPY web/embed.go ./web/
 COPY web/dist ./web/dist
 
