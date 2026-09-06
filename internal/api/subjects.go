@@ -20,6 +20,29 @@ const maxSubjectFTSIDs = 30000
 //	'+' 必须包含 / '-' 必须排除，无前缀视为 '+'；meta_tag 同语法）、
 //	date_from、date_to、rank_min、score_min、nsfw(0/1)、
 //	sort(rank|score|date|favorite|id)、order、page、size
+//
+//	@Summary		条目搜索与筛选
+//	@Description	q 经符号归一化后匹配原名、中文名与 infobox 别名（「少女歌剧」可命中「少女☆歌剧」）；tag 同时匹配普通标签与元标签，支持多标签组合 `+奇幻,-科幻`（必须包含/必须排除，逗号分隔，无前缀视为必须包含）；sort 留空时有关键词按匹配分级+人气、无关键词按 ID。
+//	@Tags			条目
+//	@Produce		json
+//	@Param			q			query		string	false	"关键词（全文搜索，中文子串匹配）"
+//	@Param			type		query		integer	false	"作品类型：1 书籍 / 2 动画 / 3 音乐 / 4 游戏 / 6 三次元"
+//	@Param			platform	query		integer	false	"子类型（平台）ID，取值见 /api/constants"
+//	@Param			tag			query		string	false	"标签组合，如 +奇幻,-科幻"
+//	@Param			meta_tag	query		string	false	"元标签组合（保留兼容，同 tag 语法，仅查元标签）"
+//	@Param			rank_min	query		integer	false	"排名下界（含）"
+//	@Param			score_min	query		number	false	"评分下界（含）"
+//	@Param			date_from	query		string	false	"发售/播出日期下界（YYYY-MM-DD）"
+//	@Param			date_to		query		string	false	"发售/播出日期上界"
+//	@Param			nsfw		query		integer	false	"0=非 R18，1=仅 R18"	Enums(0, 1)
+//	@Param			series		query		integer	false	"0=非系列，1=系列"	Enums(0, 1)
+//	@Param			sort		query		string	false	"排序字段：id / rank / score / date / favorite，省略=智能排序"
+//	@Param			order		query		string	false	"排序方向"	Enums(asc, desc)	default(asc)
+//	@Param			page		query		integer	false	"页码，从 1 起"	default(1)
+//	@Param			size		query		integer	false	"每页数量，1-200"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=subjectSearchData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/subjects/search [get]
 func (h *handler) searchSubjects(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
@@ -255,6 +278,17 @@ func appendCombinedTagFilters(conds []string, args []any, pos, neg []string) ([]
 // limit 默认 50、上限 5000（前端一次性拉取候选池后做拼音首字母本地过滤）。
 // 返回按使用次数降序的 {name, cnt} 列表，前缀命中优先于子串命中。
 // kind=all 时合并两张聚合表并按名称去重（取较大计数）。
+//
+//	@Summary		条目标签/元标签实时建议
+//	@Description	按使用次数降序返回候选（前缀命中优先于子串命中）；kind=all 合并普通标签与元标签两张聚合表并按名称去重。
+//	@Tags			条目
+//	@Produce		json
+//	@Param			kind	query		string	false	"建议类型"	Enums(tag, meta, all)	default(all)
+//	@Param			q		query		string	false	"子串过滤（ASCII 大小写不敏感）"
+//	@Param			limit	query		integer	false	"返回上限，1-5000"	default(50)
+//	@Success		200	{object}	apiEnvelope{data=subjectTagsData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/subjects/tags [get]
 func (h *handler) suggestSubjectTags(c *gin.Context) {
 	kind := c.Query("kind")
 
@@ -308,17 +342,17 @@ func (h *handler) suggestSubjectTags(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	items := make([]gin.H, 0, limit)
+	items := make([]tagSuggestItem, 0, limit)
 	for rows.Next() {
-		var (
-			name string
-			cnt  int64
-		)
-		if err := rows.Scan(&name, &cnt); err != nil {
-			fail(c, 500, err.Error())
-			return
-		}
-		items = append(items, gin.H{"name": name, "cnt": cnt})
+	var (
+		name string
+		cnt  int64
+	)
+	if err := rows.Scan(&name, &cnt); err != nil {
+		fail(c, 500, err.Error())
+		return
+	}
+	items = append(items, tagSuggestItem{Name: name, Cnt: cnt})
 	}
 	if err := rows.Err(); err != nil {
 		fail(c, 500, err.Error())
@@ -409,6 +443,17 @@ type subjectDetail struct {
 }
 
 // getSubject 条目详情。
+//
+//	@Summary		条目详情
+//	@Description	含基本信息、infobox、简介、双向关联、制作人员、角色与章节数。
+//	@Tags			条目
+//	@Produce		json
+//	@Param			id	path		integer	true	"条目 ID"
+//	@Success		200	{object}	apiEnvelope{data=subjectDetail}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"条目不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/subjects/{id} [get]
 func (h *handler) getSubject(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -537,6 +582,20 @@ func (h *handler) getSubject(c *gin.Context) {
 // getSubjectEpisodes 条目章节列表。
 // sort=type 时按章节类型分组排序（0正篇在最前，SP/OP/ED 依次跟随），
 // 供条目抽屉的章节区块使用；默认保持按集数（sort）排序。
+//
+//	@Summary		条目章节列表
+//	@Description	字段含义同 Archive 的 episode 表：sort=集数、disc=所在光盘、airdate=播出时间、duration=时长、type=章节类型（0 正篇 / 1 SP / 2 OP / 3 ED / 4 Trailer / 5 MAD / 6 其他）。
+//	@Tags			条目
+//	@Produce		json
+//	@Param			id		path		integer	true	"条目 ID"
+//	@Param			type	query		integer	false	"章节类型过滤"	Enums(0, 1, 2, 3, 4, 5, 6)
+//	@Param			sort	query		string	false	"type=按章节类型分组排序（正篇在前）；省略=按集数"	Enums(type)
+//	@Param			page	query		integer	false	"页码"	default(1)
+//	@Param			size	query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=subjectEpisodesData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/subjects/{id}/episodes [get]
 func (h *handler) getSubjectEpisodes(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {

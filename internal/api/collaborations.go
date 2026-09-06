@@ -293,6 +293,22 @@ type collabItem struct {
 // 棋盘筛选参数：positions_a（当前人物职位标签）、positions_b（合作人物职位标签），
 // 逗号分隔多选，key 形如 "2:1" 或 "cv"，两组之间取交集。
 // type：合作人物类型筛选，1=个人、2=公司（组织），缺省/其他值表示全部。
+//
+//	@Summary		人物合作
+//	@Description	人物简介 + 分页的合作人物及共同参与条目（含声优等出演，职位 id 已转常量文本）。合作人物按共同条目数降序。
+//	@Tags			人物合作
+//	@Produce		json
+//	@Param			id				path		integer	true	"人物 ID"
+//	@Param			page			query		integer	false	"页码"	default(1)
+//	@Param			size			query		integer	false	"每页数量"	default(30)
+//	@Param			positions_a		query		string	false	"当前人物职位标签（key 形如 2:1 或 cv，逗号分隔多选，- 前缀为排除），先经 /positions 获取"
+//	@Param			positions_b		query		string	false	"合作人物职位标签，语法同 positions_a；两组之间取交集"
+//	@Param			type			query		integer	false	"合作人物类型：1 个人 / 2 公司（组织）"	Enums(1, 2)
+//	@Success		200	{object}	apiEnvelope{data=collaborationData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"人物不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/collaboration [get]
 func (h *handler) getPersonCollaboration(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -613,6 +629,17 @@ func (a *facetAcc) add(key string, k1, k2 int64) {
 // 同名职位（跨条目类型的同一职位名）合并为一项，key 为原始键的逗号连接，
 // 可直接透传给 positions_a/positions_b；CV 只要有声优出演即计（可与制作职位并存）。
 // 该口径与单人作品页、双人合作页的前端统计一致。
+//
+//	@Summary		人物合作棋盘筛选职位标签
+//	@Description	返回两组标签：self=当前人物在共同条目中担任的职位（含 CV），other=合作人物的职位；同名职位跨条目类型合并，key 可直接回传给 collaboration 的 positions_a/positions_b。
+//	@Tags			人物合作
+//	@Produce		json
+//	@Param			id	path		integer	true	"人物 ID"
+//	@Success		200	{object}	apiEnvelope{data=collaborationPositionsData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"人物不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/collaboration/positions [get]
 func (h *handler) getPersonCollaborationPositions(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -784,6 +811,18 @@ func appendRoleLabel(list []roleLabel, label roleLabel) []roleLabel {
 // getPersonCollaborationWith 双人合作：返回两人物共同参与的条目及双方职务。
 // 共同参与 = 双方都在条目中出现（subject-persons 制作 ∪ person-characters 声优等）。
 // 条目按日期倒序、同日按 id 倒序；前端按职位做双向合并分组展示。
+//
+//	@Summary		双人合作
+//	@Description	两人物共同参与的条目及双方职务（职位 id 已转常量文本，CV 标记声优出演及角色名）。
+//	@Tags			人物合作
+//	@Produce		json
+//	@Param			id		path		integer	true	"人物 A ID"
+//	@Param			other	path		integer	true	"人物 B ID（不能与 A 相同）"
+//	@Success		200	{object}	apiEnvelope{data=pairCollaborationData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id / 两个人物 ID 相同"
+//	@Failure		404	{object}	apiEnvelope	"人物不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/collaboration/{other} [get]
 func (h *handler) getPersonCollaborationWith(c *gin.Context) {
 	idA, ok1 := intParam(c, "id")
 	idB, ok2 := intParam(c, "other")
@@ -916,6 +955,17 @@ type roleWork struct {
 // getPersonRoles 「单人作品」页数据：人物简介 + 其参与的全部条目及职务。
 // 参与范围 = subject-persons 制作人员 ∪ person-characters 声优等出演。
 // 条目按日期倒序、同日按 id 倒序；前端按职务分组并做快速筛选。
+//
+//	@Summary		单人作品
+//	@Description	人物参与的全部条目及职务（含 CV 出演，职位 id 已转常量文本）。
+//	@Tags			人物合作
+//	@Produce		json
+//	@Param			id	path		integer	true	"人物 ID"
+//	@Success		200	{object}	apiEnvelope{data=rolesData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"人物不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/roles [get]
 func (h *handler) getPersonRoles(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {

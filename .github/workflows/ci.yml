@@ -85,3 +85,10 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      # OpenAPI spec 由 swag 从 handler 注解生成（make docs）；
+      # 若 CI 重新生成后与提交内容不一致，说明注解变更未同步文档
+      - name: Check API docs up to date
+        run: |
+          go run github.com/swaggo/swag/cmd/swag init -d . -g cmd/bangumi/main.go -o docs --parseDependency --parseInternal
+          git diff --exit-code docs/

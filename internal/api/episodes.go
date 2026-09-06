@@ -45,6 +45,25 @@ const episodeSubjectCols = `s.id, s.type, s.name, s.name_cn, s.platform, s.date`
 // ep_type（章节类型 0正篇/1SP/2OP/3ED/4Trailer/5MAD/6其他）、disc、
 // airdate_from、airdate_to（播出时间为自由文本，ISO 格式可作范围匹配）、
 // sort(id|subject|sort|airdate|popularity)、order、page、size
+//
+//	@Summary		章节搜索与筛选
+//	@Description	q 同时命中章节标题与所属条目标题（原名/中文名/别名，归一化口径同条目搜索）；字段含义同 Archive 的 episode 表：sort=集数、disc=所在光盘、airdate=播出时间（原文文本，范围匹配对 ISO 日期有效）、duration=时长。≥3 字符走 trigram 全文索引，短词自动走命中集路径。
+//	@Tags			章节
+//	@Produce		json
+//	@Param			q				query		string	false	"关键词（全文搜索）"
+//	@Param			subject_id		query		integer	false	"所属条目 ID"
+//	@Param			type			query		integer	false	"作品类型（所属条目）：1 书籍 / 2 动画 / 3 音乐 / 4 游戏 / 6 三次元"
+//	@Param			ep_type			query		integer	false	"章节类型：0 正篇 / 1 SP / 2 OP / 3 ED / 4 Trailer / 5 MAD / 6 其他"	Enums(0, 1, 2, 3, 4, 5, 6)
+//	@Param			disc			query		integer	false	"光盘号"
+//	@Param			airdate_from	query		string	false	"播出时间下界"
+//	@Param			airdate_to		query		string	false	"播出时间上界"
+//	@Param			sort			query		string	false	"排序：id / sort=集数 / airdate=播出日期 / subject=条目 / popularity=条目人气，省略=智能排序"
+//	@Param			order			query		string	false	"排序方向"	Enums(asc, desc)	default(asc)
+//	@Param			page			query		integer	false	"页码"	default(1)
+//	@Param			size			query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=episodeSearchData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/episodes/search [get]
 func (h *handler) searchEpisodes(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (

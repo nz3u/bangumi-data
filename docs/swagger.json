@@ -1,0 +1,3490 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "本地化的 Bangumi 数据服务。利用 Archive 每周导出的 wiki 数据导入本地 SQLite，\n提供条目/人物/角色/章节等 REST 查询接口与单二进制管理接口。\n统一响应包装：成功 {\"ok\": true, \"data\": ...}；失败 {\"ok\": false, \"error\": \"...\"}。\n数据接口均为只读；管理接口（/api/admin/*）需要 X-Admin-Token 请求头（未配置 token 时放行）。\n交互式文档：/docs 或 /swagger/index.html；本文档由 swag 从代码注解自动生成（make docs）。",
+        "title": "Bangumi 本地数据搜索 API",
+        "contact": {
+            "name": "GitHub",
+            "url": "https://github.com/nz3u/bangumi-data"
+        },
+        "license": {
+            "name": "AGPL-3.0",
+            "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+        },
+        "version": "1.0"
+    },
+    "paths": {
+        "/api/admin/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "请求取消当前正在进行的更新流程。需管理员 token（除非未配置）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "取消更新",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/config": {
+            "get": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "返回当前生效的配置（含 EnsureDefaults 后的默认值）。需管理员 token（除非未配置）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "读取配置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.adminConfigData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "按字段部分更新配置（传 nil 的字段保持不变），threads 需在 0-32 之间。需管理员 token（除非未配置）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "写入配置",
+                "parameters": [
+                    {
+                        "description": "配置字段（可选部分更新）",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.putConfigReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求体错误或参数越界",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/logs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "返回当前状态与最近的管理操作日志。需管理员 token（除非未配置）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "管理日志快照",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/logs/stream": {
+            "get": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "text/event-stream，事件名 log，实时推送管理操作与导入进度日志。需管理员 token（除非未配置）。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "管理日志 SSE 推送",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 log）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/public-status": {
+            "get": {
+                "description": "供前端开箱检测：更新/迁移状态与数据库存在性，不包含日志。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "公开状态快照（免鉴权）",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.adminStatusData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/public-status/stream": {
+            "get": {
+                "description": "text/event-stream，事件名 status，维护中 5s、空闲 15s，首包即时；驱动前端「更新/迁移中」横幅。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "公开状态 SSE 推送（免鉴权）",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 status）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/reset": {
+            "post": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "清除上一次更新/迁移的成功或失败状态提示。需管理员 token（除非未配置）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "重置状态提示",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/status": {
+            "get": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "更新/迁移状态机、数据库存在性、进度、日志与导入统计。需管理员 token（除非未配置）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "管理状态快照",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.adminStatusData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/status/stream": {
+            "get": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "text/event-stream，事件名 status，含完整状态（日志、统计）；维护中 3s、空闲 15s。需管理员 token（除非未配置）。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "管理状态 SSE 推送",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 status）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/update": {
+            "post": {
+                "security": [
+                    {
+                        "AdminToken": []
+                    }
+                ],
+                "description": "异步触发：下载 Archive 最新导出 → 导入临时库 → 完整性检查 → 原子换库。进度经 /api/admin/status 或 public-status 流获取。已有更新/迁移进行中时返回 409。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理"
+                ],
+                "summary": "触发数据更新",
+                "parameters": [
+                    {
+                        "description": "触发参数",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.triggerReq"
+                        }
+                    },
+                    {
+                        "enum": [
+                            "1",
+                            "true"
+                        ],
+                        "type": "string",
+                        "description": "忽略版本一致性检查",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "token 无效",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "已有更新进行中",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/characters/search": {
+            "get": {
+                "description": "q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "角色"
+                ],
+                "summary": "角色搜索",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3
+                        ],
+                        "type": "integer",
+                        "description": "角色类型：1 角色 / 2 机体 / 3 组织",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.characterSearchData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/characters/{id}": {
+            "get": {
+                "description": "含基本信息、infobox（结构化字段）、简介、出演作品、声优/演员（按人物去重）与角色关联（双向）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "角色"
+                ],
+                "summary": "角色详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "角色 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.characterDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "角色不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/constants": {
+            "get": {
+                "description": "类型/平台/关联/职位等 id -\u003e 中文名常量（键为 JSON 字符串化的 id），前端据此渲染分类名称。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "全部 id 常量映射",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.constantsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dbinfo": {
+            "get": {
+                "description": "对比本地数据库版本记录与 Archive 最新导出，供前端右下角徽标与更新提醒展示。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "数据库版本状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.dbinfoData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/episodes/search": {
+            "get": {
+                "description": "q 同时命中章节标题与所属条目标题（原名/中文名/别名，归一化口径同条目搜索）；字段含义同 Archive 的 episode 表：sort=集数、disc=所在光盘、airdate=播出时间（原文文本，范围匹配对 ISO 日期有效）、duration=时长。≥3 字符走 trigram 全文索引，短词自动走命中集路径。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "章节"
+                ],
+                "summary": "章节搜索与筛选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "关键词（全文搜索）",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "所属条目 ID",
+                        "name": "subject_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "作品类型（所属条目）：1 书籍 / 2 动画 / 3 音乐 / 4 游戏 / 6 三次元",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6
+                        ],
+                        "type": "integer",
+                        "description": "章节类型：0 正篇 / 1 SP / 2 OP / 3 ED / 4 Trailer / 5 MAD / 6 其他",
+                        "name": "ep_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "光盘号",
+                        "name": "disc",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "播出时间下界",
+                        "name": "airdate_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "播出时间上界",
+                        "name": "airdate_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：id / sort=集数 / airdate=播出日期 / subject=条目 / popularity=条目人气，省略=智能排序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "排序方向",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.episodeSearchData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/health": {
+            "get": {
+                "description": "检查数据库可用性，并返回编译期注入的服务版本号（与发布标签一致）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.healthData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "数据库不可用",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/health/stream": {
+            "get": {
+                "description": "text/event-stream，事件名 health，30s 间隔心跳，首包即时；断开由调用方处理。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "健康状态 SSE 推送",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 health：{\"status\":\"ok|error\",\"version\":\"...\"}）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/search": {
+            "get": {
+                "description": "q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物"
+                ],
+                "summary": "人物搜索",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3
+                        ],
+                        "type": "integer",
+                        "description": "人物类型：1 个人 / 2 公司 / 3 组合",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.personSearchData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}": {
+            "get": {
+                "description": "含基本信息、infobox（结构化字段）、简介与参与/出演统计。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物"
+                ],
+                "summary": "人物详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.personDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "人物不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/collaboration": {
+            "get": {
+                "description": "人物简介 + 分页的合作人物及共同参与条目（含声优等出演，职位 id 已转常量文本）。合作人物按共同条目数降序。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物合作"
+                ],
+                "summary": "人物合作",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前人物职位标签（key 形如 2:1 或 cv，逗号分隔多选，- 前缀为排除），先经 /positions 获取",
+                        "name": "positions_a",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "合作人物职位标签，语法同 positions_a；两组之间取交集",
+                        "name": "positions_b",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2
+                        ],
+                        "type": "integer",
+                        "description": "合作人物类型：1 个人 / 2 公司（组织）",
+                        "name": "type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.collaborationData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "人物不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/collaboration/positions": {
+            "get": {
+                "description": "返回两组标签：self=当前人物在共同条目中担任的职位（含 CV），other=合作人物的职位；同名职位跨条目类型合并，key 可直接回传给 collaboration 的 positions_a/positions_b。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物合作"
+                ],
+                "summary": "人物合作棋盘筛选职位标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.collaborationPositionsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "人物不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/collaboration/{other}": {
+            "get": {
+                "description": "两人物共同参与的条目及双方职务（职位 id 已转常量文本，CV 标记声优出演及角色名）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物合作"
+                ],
+                "summary": "双人合作",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 A ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "人物 B ID（不能与 A 相同）",
+                        "name": "other",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.pairCollaborationData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id / 两个人物 ID 相同",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "人物不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/collaborators": {
+            "get": {
+                "description": "按共同参与的作品数降序分页返回（含声优等出演关联）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物"
+                ],
+                "summary": "与「X」合作的人物",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.collaboratorsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/roles": {
+            "get": {
+                "description": "人物参与的全部条目及职务（含 CV 出演，职位 id 已转常量文本）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物合作"
+                ],
+                "summary": "单人作品",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.rolesData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "人物不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/persons/{id}/works": {
+            "get": {
+                "description": "制作人员（subject-persons）关联的作品，可按职位与作品类型过滤，按日期降序。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "人物"
+                ],
+                "summary": "人物参与的作品列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "人物 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "职位 ID（作品类型:职位，取值见 /api/constants 的 staffs）",
+                        "name": "position",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            6
+                        ],
+                        "type": "integer",
+                        "description": "作品类型过滤",
+                        "name": "subject_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.personWorksData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pics/{kind}/{id}": {
+            "get": {
+                "description": "统一图片解析接口（前端轮询使用）。200+ok=本地已有；202+pending=已触发后台抓取需重试；200+failed=终态无法提供；502=上游均不可用。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图片"
+                ],
+                "summary": "图片解析（轮询）",
+                "parameters": [
+                    {
+                        "enum": [
+                            "person",
+                            "subject",
+                            "character"
+                        ],
+                        "type": "string",
+                        "description": "图片类型",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "条目/人物/角色 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "l",
+                            "m",
+                            "s",
+                            "g"
+                        ],
+                        "type": "string",
+                        "description": "尺寸，空或未知按 l 处理",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.picData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "202": {
+                        "description": "已触发后台抓取",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.picData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的图片类型或 ID",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "图片服务未启用",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "502": {
+                        "description": "上游 API 均不可用",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stats": {
+            "get": {
+                "description": "返回 subjects/persons/characters/episodes 及各关联表的行数，用于确认导入状态。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "各表行数统计",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.statsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stats/stream": {
+            "get": {
+                "description": "text/event-stream，事件名 stats，30s 间隔，首包即时。保留兼容，新逻辑请用 /api/system/stream。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "表行数统计 SSE 推送",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 stats）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subjects/search": {
+            "get": {
+                "description": "q 经符号归一化后匹配原名、中文名与 infobox 别名（「少女歌剧」可命中「少女☆歌剧」）；tag 同时匹配普通标签与元标签，支持多标签组合 `+奇幻,-科幻`（必须包含/必须排除，逗号分隔，无前缀视为必须包含）；sort 留空时有关键词按匹配分级+人气、无关键词按 ID。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "条目"
+                ],
+                "summary": "条目搜索与筛选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "关键词（全文搜索，中文子串匹配）",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "作品类型：1 书籍 / 2 动画 / 3 音乐 / 4 游戏 / 6 三次元",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "子类型（平台）ID，取值见 /api/constants",
+                        "name": "platform",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "标签组合，如 +奇幻,-科幻",
+                        "name": "tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "元标签组合（保留兼容，同 tag 语法，仅查元标签）",
+                        "name": "meta_tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "排名下界（含）",
+                        "name": "rank_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "评分下界（含）",
+                        "name": "score_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "发售/播出日期下界（YYYY-MM-DD）",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "发售/播出日期上界",
+                        "name": "date_to",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            0,
+                            1
+                        ],
+                        "type": "integer",
+                        "description": "0=非 R18，1=仅 R18",
+                        "name": "nsfw",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            0,
+                            1
+                        ],
+                        "type": "integer",
+                        "description": "0=非系列，1=系列",
+                        "name": "series",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段：id / rank / score / date / favorite，省略=智能排序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "排序方向",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码，从 1 起",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量，1-200",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.subjectSearchData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subjects/tags": {
+            "get": {
+                "description": "按使用次数降序返回候选（前缀命中优先于子串命中）；kind=all 合并普通标签与元标签两张聚合表并按名称去重。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "条目"
+                ],
+                "summary": "条目标签/元标签实时建议",
+                "parameters": [
+                    {
+                        "enum": [
+                            "tag",
+                            "meta",
+                            "all"
+                        ],
+                        "type": "string",
+                        "default": "all",
+                        "description": "建议类型",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "子串过滤（ASCII 大小写不敏感）",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "返回上限，1-5000",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.subjectTagsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subjects/{id}": {
+            "get": {
+                "description": "含基本信息、infobox、简介、双向关联、制作人员、角色与章节数。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "条目"
+                ],
+                "summary": "条目详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "条目 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.subjectDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subjects/{id}/episodes": {
+            "get": {
+                "description": "字段含义同 Archive 的 episode 表：sort=集数、disc=所在光盘、airdate=播出时间、duration=时长、type=章节类型（0 正篇 / 1 SP / 2 OP / 3 ED / 4 Trailer / 5 MAD / 6 其他）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "条目"
+                ],
+                "summary": "条目章节列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "条目 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6
+                        ],
+                        "type": "integer",
+                        "description": "章节类型过滤",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "type"
+                        ],
+                        "type": "string",
+                        "description": "type=按章节类型分组排序（正篇在前）；省略=按集数",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "每页数量",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.subjectEpisodesData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "无效的 id",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system/stream": {
+            "get": {
+                "description": "text/event-stream，事件名 system，载荷 {\"health\":{...},\"stats\":{...}}，30s 间隔，首包即时。",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "健康状态与表行数合并 SSE 推送",
+                "responses": {
+                    "200": {
+                        "description": "SSE 流（事件 system）",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.adminConfigData": {
+            "type": "object",
+            "properties": {
+                "admin_token": {
+                    "type": "string"
+                },
+                "auto_update": {
+                    "$ref": "#/definitions/config.AutoUpdateConfig"
+                },
+                "bgm_api_key": {
+                    "type": "string"
+                },
+                "database": {
+                    "$ref": "#/definitions/config.DatabaseInfo"
+                },
+                "server": {
+                    "$ref": "#/definitions/config.ServerConfig"
+                }
+            }
+        },
+        "api.adminStatusData": {
+            "type": "object",
+            "properties": {
+                "db_exists": {
+                    "type": "boolean"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "progress": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "description": "idle | updating | migrating | success | failed",
+                    "type": "string"
+                },
+                "stats": {
+                    "$ref": "#/definitions/api.importerStats"
+                }
+            }
+        },
+        "api.apiEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.characterBrief": {
+            "type": "object",
+            "properties": {
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "integer"
+                },
+                "role_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.characterDetail": {
+            "type": "object",
+            "properties": {
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "cvs": {
+                    "description": "声优/演员（person_characters 关联）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.cvItem"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "infobox": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wiki.Field"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "relations": {
+                    "description": "角色关联（person_relations 中 crt 行，双向）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.personRelationItem"
+                    }
+                },
+                "role": {
+                    "type": "integer"
+                },
+                "role_name": {
+                    "type": "string"
+                },
+                "subjects": {
+                    "description": "出演作品",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.characterSubjectItem"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.characterItem": {
+            "type": "object",
+            "properties": {
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "integer"
+                },
+                "role_name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.characterSearchData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.characterBrief"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.characterSubjectItem": {
+            "type": "object",
+            "properties": {
+                "char_type": {
+                    "type": "integer"
+                },
+                "char_type_name": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "subject_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collabFacet": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "cv": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collabItem": {
+            "type": "object",
+            "properties": {
+                "career": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "count": {
+                    "description": "共同参与条目数",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "person_id": {
+                    "type": "integer"
+                },
+                "subjects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.collabSubject"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collabPerson": {
+            "type": "object",
+            "properties": {
+                "career": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "infobox": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wiki.Field"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "subjects_count": {
+                    "description": "参与条目数（含制作与出演）",
+                    "type": "integer"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collabSubject": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "roles": {
+                    "description": "职位中文名 / CV·角色名，去重",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collaborationData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.collabItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "person": {
+                    "$ref": "#/definitions/api.collabPerson"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.collaborationPositionsData": {
+            "type": "object",
+            "properties": {
+                "other": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.collabFacet"
+                    }
+                },
+                "self": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.collabFacet"
+                    }
+                }
+            }
+        },
+        "api.collaboratorItem": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "共同参与的作品数",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "person_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.collaboratorsData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.collaboratorItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.constantsData": {
+            "type": "object",
+            "properties": {
+                "character_roles": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "episode_types": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "person_relations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/common.Relation"
+                        }
+                    }
+                },
+                "person_types": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "platforms": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/common.Platform"
+                        }
+                    }
+                },
+                "staffs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/common.Staff"
+                        }
+                    }
+                },
+                "subject_character_types": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "subject_relations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/common.Relation"
+                        }
+                    }
+                },
+                "subject_types": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.cvItem": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "person_id": {
+                    "type": "integer"
+                },
+                "subject_id": {
+                    "type": "integer"
+                },
+                "subject_name": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.dbinfoData": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "database": {
+                    "description": "本地版本记录；缺失=无记录（视为旧版本）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.DatabaseInfo"
+                        }
+                    ]
+                },
+                "latest": {
+                    "description": "上游最新导出；缺失=尚未成功获取（离线等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/update.LatestInfo"
+                        }
+                    ]
+                },
+                "update_available": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.episodeBrief": {
+            "type": "object",
+            "properties": {
+                "airdate": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disc": {
+                    "type": "integer"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "number"
+                },
+                "subject": {
+                    "$ref": "#/definitions/api.episodeSubjRef"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.episodeSearchData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.episodeBrief"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.episodeSubjRef": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "platform_name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.healthData": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.importerStats": {
+            "type": "object",
+            "properties": {
+                "characters": {
+                    "type": "integer"
+                },
+                "episodes": {
+                    "type": "integer"
+                },
+                "person_characters": {
+                    "type": "integer"
+                },
+                "person_relations": {
+                    "type": "integer"
+                },
+                "persons": {
+                    "type": "integer"
+                },
+                "subject_characters": {
+                    "type": "integer"
+                },
+                "subject_persons": {
+                    "type": "integer"
+                },
+                "subject_relations": {
+                    "type": "integer"
+                },
+                "subjects": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.pairCollaborationData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pairWork"
+                    }
+                },
+                "person_a": {
+                    "$ref": "#/definitions/api.pairPerson"
+                },
+                "person_b": {
+                    "$ref": "#/definitions/api.pairPerson"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.pairPerson": {
+            "type": "object",
+            "properties": {
+                "career": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pairWork": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "roles_a": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roleLabel"
+                    }
+                },
+                "roles_b": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roleLabel"
+                    }
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.personBrief": {
+            "type": "object",
+            "properties": {
+                "career": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.personDetail": {
+            "type": "object",
+            "properties": {
+                "career": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "collects": {
+                    "type": "integer"
+                },
+                "comments": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "infobox": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wiki.Field"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "roles_count": {
+                    "type": "integer"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                },
+                "works_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.personRelationItem": {
+            "type": "object",
+            "properties": {
+                "ended": {
+                    "type": "boolean"
+                },
+                "person_id": {
+                    "type": "integer"
+                },
+                "person_type": {
+                    "type": "string"
+                },
+                "related_name": {
+                    "type": "string"
+                },
+                "related_person_id": {
+                    "type": "integer"
+                },
+                "related_type": {
+                    "type": "integer"
+                },
+                "relation_name": {
+                    "type": "string"
+                },
+                "relation_type": {
+                    "type": "integer"
+                },
+                "spoiler": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.personSearchData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.personBrief"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.personWorksData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.workItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.picData": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "description": "不含主机的 CDN 路径，由前端拼接图片主机",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "ok | pending | failed",
+                    "type": "string"
+                }
+            }
+        },
+        "api.putConfigReq": {
+            "type": "object",
+            "properties": {
+                "admin_token": {
+                    "type": "string"
+                },
+                "auto_update": {
+                    "$ref": "#/definitions/config.AutoUpdateConfig"
+                },
+                "bgm_api_key": {
+                    "type": "string"
+                },
+                "server": {
+                    "$ref": "#/definitions/config.ServerConfig"
+                }
+            }
+        },
+        "api.relationItem": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "方向：out 表示本条目 -\u003e 关联条目，in 表示关联条目 -\u003e 本条目",
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "related_name": {
+                    "type": "string"
+                },
+                "related_name_cn": {
+                    "type": "string"
+                },
+                "related_subject_id": {
+                    "type": "integer"
+                },
+                "related_type": {
+                    "type": "integer"
+                },
+                "related_type_name": {
+                    "type": "string"
+                },
+                "relation_name": {
+                    "type": "string"
+                },
+                "relation_type": {
+                    "type": "integer"
+                },
+                "subject_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roleLabel": {
+            "type": "object",
+            "properties": {
+                "cv": {
+                    "type": "boolean"
+                },
+                "text": {
+                    "description": "职位中文名 / CV·角色名",
+                    "type": "string"
+                }
+            }
+        },
+        "api.roleWork": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roleLabel"
+                    }
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.rolesData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roleWork"
+                    }
+                },
+                "person": {
+                    "$ref": "#/definitions/api.pairPerson"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.staffItem": {
+            "type": "object",
+            "properties": {
+                "appear_eps": {
+                    "type": "string"
+                },
+                "person_id": {
+                    "type": "integer"
+                },
+                "person_name": {
+                    "type": "string"
+                },
+                "person_type": {
+                    "type": "integer"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "position_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.statsData": {
+            "type": "object",
+            "properties": {
+                "characters": {
+                    "type": "integer"
+                },
+                "episodes": {
+                    "type": "integer"
+                },
+                "person_characters": {
+                    "type": "integer"
+                },
+                "person_relations": {
+                    "type": "integer"
+                },
+                "persons": {
+                    "type": "integer"
+                },
+                "subject_characters": {
+                    "type": "integer"
+                },
+                "subject_persons": {
+                    "type": "integer"
+                },
+                "subject_relations": {
+                    "type": "integer"
+                },
+                "subjects": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.subjectBrief": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "favorite": {
+                    "$ref": "#/definitions/model.Favorite"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "meta_tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "nsfw": {
+                    "type": "boolean"
+                },
+                "platform": {
+                    "type": "integer"
+                },
+                "platform_name": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Tag"
+                    }
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.subjectDetail": {
+            "type": "object",
+            "properties": {
+                "characters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.characterItem"
+                    }
+                },
+                "date": {
+                    "type": "string"
+                },
+                "episode_count": {
+                    "type": "integer"
+                },
+                "favorite": {
+                    "$ref": "#/definitions/model.Favorite"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "infobox": {
+                    "type": "string"
+                },
+                "meta_tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "nsfw": {
+                    "type": "boolean"
+                },
+                "platform": {
+                    "type": "integer"
+                },
+                "platform_name": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.relationItem"
+                    }
+                },
+                "score": {
+                    "type": "number"
+                },
+                "score_details": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "series": {
+                    "type": "boolean"
+                },
+                "staff": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.staffItem"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Tag"
+                    }
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.subjectEpisodesData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Episode"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.subjectSearchData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.subjectBrief"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.subjectTagsData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.tagSuggestItem"
+                    }
+                }
+            }
+        },
+        "api.tagSuggestItem": {
+            "type": "object",
+            "properties": {
+                "cnt": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.triggerReq": {
+            "type": "object",
+            "properties": {
+                "force": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.workItem": {
+            "type": "object",
+            "properties": {
+                "appear_eps": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "integer"
+                },
+                "platform_name": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "position_name": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "subject_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "integer"
+                },
+                "type_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "common.Category": {
+            "type": "object",
+            "properties": {
+                "cn": {
+                    "type": "string"
+                },
+                "en": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "common.Platform": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "typeCN": {
+                    "type": "string"
+                },
+                "wikiTpl": {
+                    "type": "string"
+                }
+            }
+        },
+        "common.Relation": {
+            "type": "object",
+            "properties": {
+                "cn": {
+                    "type": "string"
+                },
+                "desc": {
+                    "type": "string"
+                },
+                "en": {
+                    "type": "string"
+                },
+                "jp": {
+                    "type": "string"
+                }
+            }
+        },
+        "common.Staff": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.Category"
+                    }
+                },
+                "cn": {
+                    "type": "string"
+                },
+                "desc": {
+                    "type": "string"
+                },
+                "en": {
+                    "type": "string"
+                },
+                "jp": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.AutoUpdateConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "keep_zip": {
+                    "type": "boolean"
+                },
+                "threads": {
+                    "description": "0 表示使用默认 8",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.DatabaseInfo": {
+            "type": "object",
+            "properties": {
+                "digest": {
+                    "description": "上游 SHA256 摘要（sha256:...）",
+                    "type": "string"
+                },
+                "imported_at": {
+                    "description": "本地导入完成时间",
+                    "type": "string"
+                },
+                "published_at": {
+                    "description": "上游导出时间",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "压缩包字节数",
+                    "type": "integer"
+                },
+                "source_url": {
+                    "description": "下载地址",
+                    "type": "string"
+                },
+                "version": {
+                    "description": "导出快照文件名，如 dump-2026-08-25.210336Z.zip",
+                    "type": "string"
+                }
+            }
+        },
+        "config.ServerConfig": {
+            "type": "object",
+            "properties": {
+                "listen": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.Episode": {
+            "type": "object",
+            "properties": {
+                "airdate": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disc": {
+                    "type": "integer"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "number"
+                },
+                "subject_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.Favorite": {
+            "type": "object",
+            "properties": {
+                "doing": {
+                    "type": "integer"
+                },
+                "done": {
+                    "type": "integer"
+                },
+                "dropped": {
+                    "type": "integer"
+                },
+                "on_hold": {
+                    "type": "integer"
+                },
+                "wish": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.Tag": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "update.LatestInfo": {
+            "type": "object",
+            "properties": {
+                "published_at": {
+                    "description": "上游文件创建时间",
+                    "type": "string"
+                },
+                "version": {
+                    "description": "快照文件名",
+                    "type": "string"
+                }
+            }
+        },
+        "wiki.Field": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "AdminToken": {
+            "type": "apiKey",
+            "name": "X-Admin-Token",
+            "in": "header"
+        }
+    }
+}

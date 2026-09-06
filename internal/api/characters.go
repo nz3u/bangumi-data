@@ -50,7 +50,31 @@ type cvItem struct {
 	Summary     string `json:"summary,omitempty"`
 }
 
+// characterBrief 角色搜索条目。
+type characterBrief struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	NameCN   string `json:"name_cn"`
+	Role     int    `json:"role"`
+	RoleName string `json:"role_name"`
+	Collects int    `json:"collects"`
+	Comments int    `json:"comments"`
+}
+
 // searchCharacters 角色搜索。
+// 短于 trigram 最小长度的关键词自动回退 LIKE 子串匹配。
+//
+//	@Summary		角色搜索
+//	@Description	q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。
+//	@Tags			角色
+//	@Produce		json
+//	@Param			q		query		string	false	"关键词"
+//	@Param			role	query		integer	false	"角色类型：1 角色 / 2 机体 / 3 组织"	Enums(1, 2, 3)
+//	@Param			page	query		integer	false	"页码"	default(1)
+//	@Param			size	query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=characterSearchData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/characters/search [get]
 func (h *handler) searchCharacters(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
@@ -119,15 +143,6 @@ func (h *handler) searchCharacters(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	type characterBrief struct {
-		ID       int64  `json:"id"`
-		Name     string `json:"name"`
-		NameCN   string `json:"name_cn"`
-		Role     int    `json:"role"`
-		RoleName string `json:"role_name"`
-		Collects int    `json:"collects"`
-		Comments int    `json:"comments"`
-	}
 	items := make([]characterBrief, 0, size)
 	for rows.Next() {
 		var it characterBrief
@@ -150,6 +165,17 @@ func (h *handler) searchCharacters(c *gin.Context) {
 }
 
 // getCharacter 角色详情（含出演作品与 CV）。
+//
+//	@Summary		角色详情
+//	@Description	含基本信息、infobox（结构化字段）、简介、出演作品、声优/演员（按人物去重）与角色关联（双向）。
+//	@Tags			角色
+//	@Produce		json
+//	@Param			id	path		integer	true	"角色 ID"
+//	@Success		200	{object}	apiEnvelope{data=characterDetail}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"角色不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/characters/{id} [get]
 func (h *handler) getCharacter(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
