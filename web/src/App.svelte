@@ -17,6 +17,7 @@ import LazyRoute from './components/LazyRoute.svelte'
     { key: 'pairworks', label: '双人合作', path: '/pairworks' },
     { key: 'singleworks', label: '单人作品', path: '/singleworks' },
     { key: 'subjects', label: '条目搜索', path: '/subjects' },
+    { key: 'episodes', label: '章节搜索', path: '/episodes' },
     { key: 'persons', label: '人物搜索', path: '/persons' },
     { key: 'characters', label: '角色搜索', path: '/characters' }
   ]
@@ -242,6 +243,7 @@ import LazyRoute from './components/LazyRoute.svelte'
       <Route path="/pairworks"><LazyRoute path="/pairworks" /></Route>
       <Route path="/singleworks"><LazyRoute path="/singleworks" /></Route>
       <Route path="/subjects"><LazyRoute path="/subjects" /></Route>
+      <Route path="/episodes"><LazyRoute path="/episodes" /></Route>
       <Route path="/persons"><LazyRoute path="/persons" /></Route>
       <Route path="/characters"><LazyRoute path="/characters" /></Route>
       <Route path="/setup"><LazyRoute path="/setup" /></Route>

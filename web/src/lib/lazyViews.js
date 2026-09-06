@@ -8,6 +8,7 @@ const registry = {
   '/pairworks': () => import('../views/PairWorksView.svelte'),
   '/singleworks': () => import('../views/SingleWorksView.svelte'),
   '/subjects': () => import('../views/SubjectsView.svelte'),
+  '/episodes': () => import('../views/EpisodesView.svelte'),
   '/persons': () => import('../views/PersonsView.svelte'),
   '/characters': () => import('../views/CharactersView.svelte'),
   '/setup': () => import('../views/SetupView.svelte'),

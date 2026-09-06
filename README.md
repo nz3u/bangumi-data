@@ -2,7 +2,6 @@
 
 本地化的 [Bangumi](https://bgm.tv) 数据服务。利用 Archive 每周导出的 wiki 数据，导入本地 SQLite，
 并提供 REST 查询 API，支撑前端网页的复杂查询筛选（条目/人物/角色/章节搜索、合作人物、制作人员、关联关系等）。
-
 单二进制、跨平台（无 CGO）、支持 Docker。
 
 ## 数据来源
@@ -18,7 +17,7 @@
 | 语言 | Go 1.25+ | 标准工具链交叉编译 |
 | 数据库 | SQLite（[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)） | 纯 Go 驱动，无 CGO，WAL 模式，FTS5 trigram 中文搜索 |
 | Web | [Gin](https://github.com/gin-gonic/gin) | REST API + 静态文件托管 |
-| 前端 | [Svelte 5](https://svelte.dev) + [Tailwind CSS 4](https://tailwindcss.com) + [Vite](https://vite.dev) | 六页路由（[svelte5-router](https://www.npmjs.com/package/svelte5-router)），详情抽屉，构建后内嵌进二进制（`web/`） |
+| 前端 | [Svelte 5](https://svelte.dev) + [Tailwind CSS 4](https://tailwindcss.com) + [Vite](https://vite.dev) | 七页路由（[svelte5-router](https://www.npmjs.com/package/svelte5-router)），详情抽屉，构建后内嵌进二进制（`web/`） |
 | YAML | [goccy/go-yaml](https://github.com/goccy/go-yaml) | 支持 common yaml 的 anchor/alias |
 | 部署 | Docker 多阶段构建 | alpine 最终镜像，数据卷持久化 |
 
@@ -81,7 +80,7 @@ docker compose up -d bangumi
 
 ## 前端页面（内嵌）
 
-`web/` 是 Svelte 5 + Tailwind 4 的多页搜索前端，经 svelte5-router 提供六个直达页面
+`web/` 是 Svelte 5 + Tailwind 4 的多页搜索前端，经 svelte5-router 提供七个直达页面
 （刷新/前进后退/URL 直达均可，根路径默认进入「人物合作」并聚焦首个标签）：
 
 | 路径 | 页面 | 说明 |
@@ -90,12 +89,16 @@ docker compose up -d bangumi
 | `/pairworks` | 双人合作 | 两人物共同参与的条目及双方职务 |
 | `/singleworks` | 单人作品 | 单人物参与的全部条目，按职务分组，支持职位筛选 |
 | `/subjects` | 条目搜索 | 多条件筛选 + 分页；标签实时建议（普通标签与元标签合并检索，支持拼音首字母如 `xs`→小说、`qh`→奇幻）与多标签组合（`+必须包含,-必须排除`）；停顿 2s 自动搜索，标签框激活时需静默 3s |
+| `/episodes` | 章节搜索 | 章节级检索（表头含义同 Archive 的 episode 表）：关键词同时命中章节标题与所属条目标题（原名/中文名），支持条目 ID、作品类型、章节类型（正篇/SP/OP/ED…）、光盘、播出时间范围、排序；停顿 2s 自动搜索 |
 | `/persons` | 人物搜索 | 搜索建议（输入停顿 1s 自动执行） |
 | `/characters` | 角色搜索 | 同上 |
 
 通用能力：
 
 - **详情抽屉**：任意行点击弹出右侧抽屉（人物含 infobox「资料」栏），左侧快速跳转导航随滚动高亮当前区块；
+  有章节的条目（动画/电视剧/音乐碟轨等）在抽屉内按类型+集数分组展示章节，连续的空章节（无标题且无日期/时长/简介）
+  压缩为一条区间行（如「14–16（无标题 ×3）」）避免占满页面；超过 200 条仅显示前 200 条并可一键跳转「章节搜索」
+  （游戏/电影等无章节的条目不显示该区块）；
   人物条目内可单选关联人物直接跳转「双人合作」页自动查询
 - **重名提示**：人物/角色搜索建议检测到同名时顶部提示，确认后跳转人物搜索页发起同名搜索；
   纯数字输入且精确 ID 命中时不提示（意图明确无歧义）
@@ -156,7 +159,8 @@ bangumi version                                               版本号
 | `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 经符号归一化后匹配原名、中文名与 infobox 别名，见「全文搜索」；`tag` 同时匹配普通标签与元标签，支持多标签组合：`+必须包含,-必须排除`，逗号分隔多选，无前缀视为 `+`；`meta_tag` 参数保留向后兼容；`sort` 留空为默认排序——有关键词时按匹配位置（原名＞中文名＞别名＞归一化）加人气，无关键词时按 ID） |
 | `GET /api/subjects/tags?kind=tag\|meta\|all&q=&limit=` | 条目标签/元标签实时建议（`kind=all` 合并两张表并去重，`kind=tag`/`meta` 单独查；按使用次数降序，前缀命中优先；前端拉取候选池后做拼音首字母本地过滤） |
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
-| `GET /api/subjects/:id/episodes?type=&page=&size=` | 条目章节列表 |
+| `GET /api/subjects/:id/episodes?type=&sort=&page=&size=` | 条目章节列表（`sort=type` 按章节类型分组排序，供条目抽屉使用；默认按集数 sort） |
+| `GET /api/episodes/search?q=&subject_id=&type=&ep_type=&disc=&airdate_from=&airdate_to=&sort=&order=&page=&size=` | 章节搜索/筛选（`q` 同时命中章节标题与所属条目标题的原名/中文名，归一化口径同条目搜索；`type` 为所属条目作品类型，`ep_type` 为章节类型 0正篇/1特别篇/2OP/3ED/4Trailer/5MAD/6其他；`airdate` 为原文文本，范围匹配对 ISO 日期格式有效；`sort` 支持 id/集数(sort)/播出日期(airdate)/条目(subject)/条目人气(popularity)，留空默认——有关键词按匹配分级+条目人气，无关键词按 ID） |
 | `GET /api/persons/search?q=&type=` | 人物搜索（q 匹配原名与 infobox 简体中文名） |
 | `GET /api/persons/:id` | 人物详情（含人物/角色关联） |
 | `GET /api/persons/:id/works?position=&subject_type=&page=&size=` | 人物参与的作品（按职位/类型筛选） |
@@ -185,6 +189,12 @@ curl "localhost:8080/api/subjects/tags?kind=all&q=奇幻"
 
 # 全文搜索（中文子串匹配）
 curl "localhost:8080/api/subjects/search?q=路人女主的养成方法"
+
+# 章节搜索：关键词「光るなら」命中章节标题或所属条目标题（含符号归一化）
+curl "localhost:8080/api/episodes/search?q=光るなら&size=20"
+
+# 章节搜索：某条目的全部 OP/ED（章节类型筛选），按集数排序
+curl "localhost:8080/api/episodes/search?subject_id=265&ep_type=2&sort=sort"
 
 # 全文搜索容忍符号差异并覆盖 infobox 别名：
 # 「少女歌剧」可命中「少女☆歌剧」、「Kaguya Hime」可命中别名「Chou Kaguya-hime!」。
@@ -216,7 +226,7 @@ curl "localhost:8080/api/persons/7906/roles"
 cmd/bangumi/           CLI 入口（import / update / serve / version）
 embedded.go            根级包：go:embed 内嵌 common/*.yml
 web/
-  src/views/           六个页面视图
+  src/views/           七个页面视图
   src/components/      抽屉、导航、建议、分页等组件
   src/lib/             API 封装、常量、主题、图片状态
 common/                bangumi/common 子模块（id 常量）
@@ -259,8 +269,15 @@ git push origin v0.2.0
   `subjects.search_norm` 单列索引，查询词同口径归一化，因此「少女歌剧」能命中「少女☆歌剧」、
   「Kaguya Hime」能命中别名「Chou Kaguya-hime!」；查询统一走 `LIKE '%x%'`，
   由 SQLite 自动改写为 trigram 索引查找（注意不可加 `ESCAPE`，否则索引改写失效）。
-  旧库由启动迁移自动补列回填并重建 `subjects_fts`（约 30 秒一次性）。
+  章节检索同理：`episodes.search_norm`（章节 name + name_cn 归一化）建 `episodes_fts`，
+  「命中所属条目标题」的部分由查询侧复用 `subjects_fts` 完成（OR 合并，multi-index OR
+  分别经主键与 subject_id 索引取候选），因此搜条目名可列出其全部章节。
+  旧库由启动迁移自动补列回填并重建对应 FTS（episodes 约 170 万行，一次性 1~2 分钟）。
   未覆盖：繁简混写（如「輝夜姬」对「輝夜姫/辉夜姬」）与错字模糊匹配。
+- 上游 wiki 导出的文本字段（条目/章节/人物/角色的标题、中文名、简介、infobox 等）带
+  MediaWiki 转义（`&amp;`、`&lt;`、`&#39;` 等），导入时统一解码为原字符显示；
+  旧库由 serve 启动迁移一次性解码并重建 FTS（`entities_decoded` 标记）——
+  否则「A&amp;B」会原样显示，且归一化检索无法命中（"&" 被丢弃后折叠为 "aampb"）。
 
 ### 标签搜索性能优化
 

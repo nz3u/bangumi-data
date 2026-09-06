@@ -112,6 +112,31 @@ export function getSubjectEpisodes(id, params) {
   return request(`/subjects/${id}/episodes`, params)
 }
 
+// ---- 章节 ----
+
+// 将表单状态映射为 /episodes/search 查询参数。
+// ep_type 为章节类型（0正篇/1SP/2OP/3ED/4Trailer/5MAD/6其他），
+// type 为所属条目的作品类型；q 同时命中章节标题与所属条目标题（FTS）。
+export function buildEpisodeQuery(f) {
+  return {
+    q: f.q,
+    subject_id: f.subjectId,
+    type: f.type,
+    ep_type: f.epType,
+    disc: f.disc,
+    airdate_from: f.airdateFrom,
+    airdate_to: f.airdateTo,
+    sort: f.sort,
+    order: f.order,
+    page: f.page,
+    size: f.size
+  }
+}
+
+export function searchEpisodes(filters) {
+  return request('/episodes/search', buildEpisodeQuery(filters))
+}
+
 // ---- 人物 ----
 
 export function searchPersons(filters) {

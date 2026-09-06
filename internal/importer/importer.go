@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"os"
@@ -28,6 +29,16 @@ import (
 	"bangumi-subject-go/internal/norm"
 	"bangumi-subject-go/internal/wiki"
 )
+
+// decodeText 解码上游 wiki 数据中的 HTML 实体（&amp; &lt; &#39; 等命名与数字实体）。
+// 它们是 MediaWiki 存储层的转义产物：按原文存储会以「&amp;」形态原样显示，
+// 且破坏检索——归一化会丢弃 "&"，"A&amp;B" 折叠为 "aampb"，按 "ab" 搜不到。
+func decodeText(s string) string {
+	if strings.Contains(s, "&") {
+		return html.UnescapeString(s)
+	}
+	return s
+}
 
 // Stats 导入统计。
 type Stats struct {
@@ -232,9 +243,12 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 		tags, _ := json.Marshal(s.Tags)
 		sd, _ := json.Marshal(s.ScoreDetails)
 		mt, _ := json.Marshal(s.MetaTags)
-		aliases := wiki.ExtractAliasesText(s.Infobox)
-		searchNorm := norm.Join(s.Name, s.NameCN, aliases)
-		_, err := insert.Exec(s.ID, s.Type, s.Name, s.NameCN, aliases, searchNorm, s.Infobox, s.Platform, s.Summary,
+		// 文本字段先解码 HTML 实体，别名与归一化检索串从解码后的文本派生
+		name, nameCN, summary := decodeText(s.Name), decodeText(s.NameCN), decodeText(s.Summary)
+		infobox := decodeText(s.Infobox)
+		aliases := wiki.ExtractAliasesText(infobox)
+		searchNorm := norm.Join(name, nameCN, aliases)
+		_, err := insert.Exec(s.ID, s.Type, name, nameCN, aliases, searchNorm, infobox, s.Platform, summary,
 			bool2int(s.NSFW), s.Date, string(fav), bool2int(s.Series), string(tags),
 			s.Score, string(sd), s.Rank, string(mt))
 		return err
@@ -252,8 +266,8 @@ func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit i
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Person{} }, func(v any) error {
 		p := v.(*model.Person)
 		career, _ := json.Marshal(p.Career)
-		nameCN := wiki.ExtractNameCN(p.Infobox)
-		_, err := insert.Exec(p.ID, p.Name, nameCN, p.Type, string(career), p.Infobox, p.Summary, p.Comments, p.Collects)
+		nameCN := wiki.ExtractNameCN(decodeText(p.Infobox))
+		_, err := insert.Exec(p.ID, decodeText(p.Name), nameCN, p.Type, string(career), decodeText(p.Infobox), decodeText(p.Summary), p.Comments, p.Collects)
 		return err
 	}, insert)
 }
@@ -268,15 +282,18 @@ func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limi
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Character{} }, func(v any) error {
 		c := v.(*model.Character)
-		nameCN := wiki.ExtractNameCN(c.Infobox)
-		_, err := insert.Exec(c.ID, c.Role, c.Name, nameCN, c.Infobox, c.Summary, c.Comments, c.Collects)
+		infobox := decodeText(c.Infobox)
+		nameCN := wiki.ExtractNameCN(infobox)
+		_, err := insert.Exec(c.ID, c.Role, decodeText(c.Name), nameCN, infobox, decodeText(c.Summary), c.Comments, c.Collects)
 		return err
 	}, insert)
 }
 
+// importEpisodes 导入 episodes 表（FTS 由导入完成后的 FinalizeSchema 集合式填充）。
+// 同时算出归一化检索串 search_norm（name + name_cn），供章节 FTS 与 LIKE 回退使用。
 func importEpisodes(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
-	insert, err := conn.Prepare(`INSERT INTO episodes (id, name, name_cn, description, airdate, disc, duration, subject_id, sort, type)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	insert, err := conn.Prepare(`INSERT INTO episodes (id, name, name_cn, description, airdate, disc, duration, subject_id, sort, type, search_norm)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -284,7 +301,9 @@ func importEpisodes(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Episode{} }, func(v any) error {
 		e := v.(*model.Episode)
-		_, err := insert.Exec(e.ID, e.Name, e.NameCN, e.Description, e.Airdate, e.Disc, e.Duration, e.SubjectID, e.Sort, e.Type)
+		name, nameCN := decodeText(e.Name), decodeText(e.NameCN)
+		searchNorm := norm.Join(name, nameCN)
+		_, err := insert.Exec(e.ID, name, nameCN, decodeText(e.Description), e.Airdate, e.Disc, e.Duration, e.SubjectID, e.Sort, e.Type, searchNorm)
 		return err
 	}, insert)
 }
@@ -344,7 +363,7 @@ func importPersonCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.PersonCharacter{} }, func(v any) error {
 		p := v.(*model.PersonCharacter)
-		_, err := insert.Exec(p.PersonID, p.SubjectID, p.CharacterID, p.Type, p.Summary)
+		_, err := insert.Exec(p.PersonID, p.SubjectID, p.CharacterID, p.Type, decodeText(p.Summary))
 		return err
 	}, insert)
 }

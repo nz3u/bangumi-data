@@ -14,6 +14,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"html"
 	"log"
 	"strings"
 
@@ -25,6 +26,8 @@ const nameCNBackfillDone = "name_cn_backfilled"
 const subjectSearchBuilt = "subject_search_built"
 const tagStatsBuilt = "tag_stats_built"
 const tagMapsBuilt = "tag_maps_built"
+const episodesFTSBuilt = "episodes_fts_built"
+const entitiesDecoded = "entities_decoded"
 
 // UpgradeSchema 幂等升级旧库结构：补列 -> 回填简体中文名 -> 重建人物/角色 FTS
 // -> 补建条目检索列（aliases/search_norm）并重建条目 FTS
@@ -196,6 +199,122 @@ func UpgradeSchema(conn *sql.DB) error {
 			return err
 		}
 	}
+
+	// 6. 章节检索列与章节 FTS：
+	//    episodes 补建 search_norm（归一化后的 name + name_cn），
+	//    并新建只索引该列的 episodes_fts。章节搜索中「命中所属条目标题」
+	//    的部分复用 subjects_fts（见 api.searchEpisodes），无需重复存储。
+	//    旧库一次性回填约 170 万行，需 1~2 分钟，完成后置标记跳过。
+	//    episodes 表不存在时（空库/纯旧测试库）跳过，待导入时统一构建。
+	hasEps, err := tableExists(conn, "episodes")
+	if err != nil {
+		return fmt.Errorf("检查 episodes: %w", err)
+	}
+	if hasEps {
+		hasNorm, err := tableHasColumn(conn, "episodes", "search_norm")
+		if err != nil {
+			return fmt.Errorf("检查 episodes.search_norm: %w", err)
+		}
+		epAdded := false
+		if !hasNorm {
+			if _, err := conn.Exec(`ALTER TABLE episodes ADD COLUMN search_norm TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("补建 episodes.search_norm: %w", err)
+			}
+			log.Println("已为 episodes 补建 search_norm 列")
+			epAdded = true
+		}
+		ftsDone, err := metaGet(conn, episodesFTSBuilt)
+		if err != nil {
+			return err
+		}
+		rebuildFTS := false
+		if epAdded || ftsDone != "1" {
+			n, err := backfillEpisodesSearch(conn)
+			if err != nil {
+				return fmt.Errorf("回填 episodes.search_norm: %w", err)
+			}
+			log.Printf("已回填 episodes.search_norm %d 行（耗时一次性，之后跳过）", n)
+			if err := metaSet(conn, episodesFTSBuilt, "1"); err != nil {
+				return err
+			}
+			rebuildFTS = true
+		}
+		hasEpsFTS, err := tableExists(conn, "episodes_fts")
+		if err != nil {
+			return fmt.Errorf("检查 episodes_fts: %w", err)
+		}
+		if !hasEpsFTS {
+			rebuildFTS = true
+		}
+		if rebuildFTS {
+			if err := ExecMulti(conn, `DROP TABLE IF EXISTS episodes_fts;`); err != nil {
+				return err
+			}
+			if err := ExecMulti(conn, ftsEpisodesSQL); err != nil {
+				return err
+			}
+			if err := ExecMulti(conn, ftsEpisodesPopulateSQL); err != nil {
+				return err
+			}
+			log.Println("已重建 episodes_fts（单列 search_norm）")
+		}
+	}
+
+	// 7. HTML 实体解码：上游 wiki 数据的文本字段带 MediaWiki 转义（&amp; &lt; &#39; …），
+	//    按原文存储会以「&amp;」形态原样显示，且破坏检索（归一化丢弃 "&" 后
+	//    "A&amp;B" 折叠为 "aampb"，按 "ab" 搜不到）。一次性扫描含 '&' 的行解码，
+	//    重算派生列（aliases/search_norm/name_cn），有变更时重建全部 FTS。
+	//    新导入的库在导入时已解码，由 FinalizeSchema 置标记跳过。
+	done, err = metaGet(conn, entitiesDecoded)
+	if err != nil {
+		return err
+	}
+	if done != "1" {
+		changed := int64(0)
+		for _, st := range []struct {
+			table string
+			fn    func(*sql.DB) (int64, error)
+		}{
+			{"subjects", decodeSubjectEntities},
+			{"episodes", decodeEpisodeEntities},
+			{"persons", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "persons") }},
+			{"characters", func(c *sql.DB) (int64, error) { return decodePersonEntities(c, "characters") }},
+			{"person_characters", decodePersonCharSummary},
+		} {
+			has, err := tableExists(conn, st.table)
+			if err != nil {
+				return fmt.Errorf("检查 %s: %w", st.table, err)
+			}
+			if !has {
+				continue
+			}
+			n, err := st.fn(conn)
+			if err != nil {
+				return fmt.Errorf("解码 HTML 实体: %w", err)
+			}
+			changed += n
+		}
+		if changed > 0 {
+			// 派生列（search_norm 等）已随解码重算，FTS 需整体重建才能命中新文本
+			if err := ExecMulti(conn, `DROP TABLE IF EXISTS subjects_fts;
+				DROP TABLE IF EXISTS persons_fts;
+				DROP TABLE IF EXISTS characters_fts;
+				DROP TABLE IF EXISTS episodes_fts;`); err != nil {
+				return err
+			}
+			if err := ExecMulti(conn, ftsSQL); err != nil {
+				return err
+			}
+			if err := ExecMulti(conn, ftsPopulateSQL); err != nil {
+				return err
+			}
+			log.Println("已重建全部 FTS（实体解码后）")
+		}
+		if err := metaSet(conn, entitiesDecoded, "1"); err != nil {
+			return err
+		}
+		log.Printf("HTML 实体解码完成：更新 %d 行（耗时一次性，之后跳过）", changed)
+	}
 	return nil
 }
 
@@ -349,6 +468,303 @@ func backfillSubjectSearch(conn *sql.DB) (int64, error) {
 		applied = end
 	}
 	return int64(len(updates)), nil
+}
+
+// backfillEpisodesSearch 全表扫描 search_norm 为空的章节行，
+// 用 name / name_cn 算出归一化检索串后批量更新。
+// 标题原本就为空的行（多为音乐碟轨）归一化结果仍为空，无需写回，
+// 跳过它们可省掉约 1/5 的无效写入。
+func backfillEpisodesSearch(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`SELECT id, name, name_cn FROM episodes WHERE search_norm = ''`)
+	if err != nil {
+		return 0, err
+	}
+	type searchRow struct {
+		id   int64
+		norm string
+	}
+	updates := make([]searchRow, 0, 4096)
+	scanned := 0
+	for rows.Next() {
+		var (
+			id     int64
+			name   string
+			nameCN string
+		)
+		if err := rows.Scan(&id, &name, &nameCN); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		scanned++
+		if scanned%500000 == 0 {
+			log.Printf("回填 episodes 检索列：已扫描 %d 行…", scanned)
+		}
+		if name == "" && nameCN == "" {
+			continue
+		}
+		updates = append(updates, searchRow{id: id, norm: norm.Join(name, nameCN)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	const batch = 20000
+	applied := 0
+	for start := 0; start < len(updates); start += batch {
+		end := start + batch
+		if end > len(updates) {
+			end = len(updates)
+		}
+		tx, err := conn.Begin()
+		if err != nil {
+			return int64(applied), err
+		}
+		stmt, err := tx.Prepare(`UPDATE episodes SET search_norm = ? WHERE id = ?`)
+		if err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		for _, u := range updates[start:end] {
+			if _, err := stmt.Exec(u.norm, u.id); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return int64(applied), err
+			}
+		}
+		if err := stmt.Close(); err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		if err := tx.Commit(); err != nil {
+			return int64(applied), err
+		}
+		applied = end
+	}
+	return int64(len(updates)), nil
+}
+
+// decodeSubjectEntities 解码 subjects 文本字段中的 HTML 实体，
+// 并从解码后的 infobox 重算 aliases 与 search_norm。返回实际变更的行数。
+// 仅写回有变化的行，避免对合法含 '&' 文本（如「A&B」）的无谓重写。
+func decodeSubjectEntities(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`SELECT id, name, name_cn, summary, infobox FROM subjects
+		WHERE name LIKE '%&%' OR name_cn LIKE '%&%' OR summary LIKE '%&%' OR infobox LIKE '%&%'`)
+	if err != nil {
+		return 0, err
+	}
+	type row struct {
+		id                         int64
+		name, nameCN, summary, ib  string
+		aliases, norm              string
+	}
+	updates := make([]row, 0, 1024)
+	for rows.Next() {
+		var (
+			r                        row
+			name, nameCN, summary, ib string
+		)
+		if err := rows.Scan(&r.id, &name, &nameCN, &summary, &ib); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		r.name = normDecode(name)
+		r.nameCN = normDecode(nameCN)
+		r.summary = normDecode(summary)
+		r.ib = normDecode(ib)
+		r.aliases = wiki.ExtractAliasesText(r.ib)
+		r.norm = norm.Join(r.name, r.nameCN, r.aliases)
+		if r.name != name || r.nameCN != nameCN || r.summary != summary || r.ib != ib {
+			updates = append(updates, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if err := applyUpdates(conn, `UPDATE subjects SET name=?, name_cn=?, summary=?, infobox=?, aliases=?, search_norm=? WHERE id=?`,
+		func(stmt *sql.Stmt) error {
+			for _, u := range updates {
+				if _, err := stmt.Exec(u.name, u.nameCN, u.summary, u.ib, u.aliases, u.norm, u.id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+		return 0, err
+	}
+	return int64(len(updates)), nil
+}
+
+// decodeEpisodeEntities 解码 episodes 文本字段并重算 search_norm。
+func decodeEpisodeEntities(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`SELECT id, name, name_cn, description FROM episodes
+		WHERE name LIKE '%&%' OR name_cn LIKE '%&%' OR description LIKE '%&%'`)
+	if err != nil {
+		return 0, err
+	}
+	type row struct {
+		id                      int64
+		name, nameCN, desc, norm string
+	}
+	updates := make([]row, 0, 1024)
+	for rows.Next() {
+		var (
+			r                    row
+			name, nameCN, desc   string
+		)
+		if err := rows.Scan(&r.id, &name, &nameCN, &desc); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		r.name = normDecode(name)
+		r.nameCN = normDecode(nameCN)
+		r.desc = normDecode(desc)
+		r.norm = norm.Join(r.name, r.nameCN)
+		if r.name != name || r.nameCN != nameCN || r.desc != desc {
+			updates = append(updates, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if err := applyUpdates(conn, `UPDATE episodes SET name=?, name_cn=?, description=?, search_norm=? WHERE id=?`,
+		func(stmt *sql.Stmt) error {
+			for _, u := range updates {
+				if _, err := stmt.Exec(u.name, u.nameCN, u.desc, u.norm, u.id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+		return 0, err
+	}
+	return int64(len(updates)), nil
+}
+
+// decodePersonEntities 解码 persons/characters 文本字段，
+// 并从解码后的 infobox 重取「简体中文名」。
+func decodePersonEntities(conn *sql.DB, table string) (int64, error) {
+	rows, err := conn.Query(fmt.Sprintf(`SELECT id, name, infobox, summary FROM %s
+		WHERE name LIKE '%%&%%' OR infobox LIKE '%%&%%' OR summary LIKE '%%&%%'`, table))
+	if err != nil {
+		return 0, err
+	}
+	type row struct {
+		id                 int64
+		name, ib, summary, nameCN string
+	}
+	updates := make([]row, 0, 64)
+	for rows.Next() {
+		var (
+			r                    row
+			name, ib, summary    string
+		)
+		if err := rows.Scan(&r.id, &name, &ib, &summary); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		r.name = normDecode(name)
+		r.ib = normDecode(ib)
+		r.summary = normDecode(summary)
+		r.nameCN = wiki.ExtractNameCN(r.ib)
+		if r.name != name || r.ib != ib || r.summary != summary {
+			updates = append(updates, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if err := applyUpdates(conn, fmt.Sprintf(`UPDATE %s SET name=?, infobox=?, summary=?, name_cn=? WHERE id=?`, table),
+		func(stmt *sql.Stmt) error {
+			for _, u := range updates {
+				if _, err := stmt.Exec(u.name, u.ib, u.summary, u.nameCN, u.id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+		return 0, err
+	}
+	return int64(len(updates)), nil
+}
+
+// decodePersonCharSummary 解码 person_characters.summary（角色出演感想）。
+func decodePersonCharSummary(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`SELECT rowid, summary FROM person_characters WHERE summary LIKE '%&%'`)
+	if err != nil {
+		return 0, err
+	}
+	type row struct {
+		rowid   int64
+		summary string
+	}
+	updates := make([]row, 0, 64)
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.rowid, &r.summary); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if d := normDecode(r.summary); d != r.summary {
+			r.summary = d
+			updates = append(updates, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if err := applyUpdates(conn, `UPDATE person_characters SET summary=? WHERE rowid=?`,
+		func(stmt *sql.Stmt) error {
+			for _, u := range updates {
+				if _, err := stmt.Exec(u.summary, u.rowid); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+		return 0, err
+	}
+	return int64(len(updates)), nil
+}
+
+// applyUpdates 在单个事务中执行解码更新（变更行数量级最多数万行，无需分批）。
+func applyUpdates(conn *sql.DB, updateSQL string, exec func(*sql.Stmt) error) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(updateSQL)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := exec(stmt); err != nil {
+		stmt.Close()
+		tx.Rollback()
+		return err
+	}
+	if err := stmt.Close(); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// normDecode 解码 HTML 实体（无 '&' 时原样返回，见 importer.decodeText）。
+func normDecode(s string) string {
+	if strings.Contains(s, "&") {
+		return html.UnescapeString(s)
+	}
+	return s
 }
 
 // backfillNameCN 全表扫描 name_cn 为空的行，解析 infobox 提取「简体中文名」后批量更新。

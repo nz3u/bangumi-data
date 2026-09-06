@@ -79,6 +79,9 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 		api.GET("/subjects/:id", h.getSubject)
 		api.GET("/subjects/:id/episodes", h.getSubjectEpisodes)
 
+		// 章节（搜索词命中章节标题或所属条目标题）
+		api.GET("/episodes/search", h.searchEpisodes)
+
 		// 人物
 		api.GET("/persons/search", h.searchPersons)
 		api.GET("/persons/:id", h.getPerson)
