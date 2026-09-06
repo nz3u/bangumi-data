@@ -75,11 +75,32 @@ func adminAuthMiddleware(deps adminDeps) gin.HandlerFunc {
 	}
 }
 
+// adminStatus 管理状态快照（含日志与导入统计）。
+//
+//	@Summary		管理状态快照
+//	@Description	更新/迁移状态机、数据库存在性、进度、日志与导入统计。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		json
+//	@Security		AdminToken
+//	@Success		200	{object}	apiEnvelope{data=adminStatusData}
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/status [get]
 func adminStatus(c *gin.Context, deps adminDeps) {
 	st := deps.mgr.Status()
 	respOK(c, st)
 }
 
+// adminGetConfig 读取生效配置。
+//
+//	@Summary		读取配置
+//	@Description	返回当前生效的配置（含 EnsureDefaults 后的默认值）。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		json
+//	@Security		AdminToken
+//	@Success		200	{object}	apiEnvelope{data=adminConfigData}
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/admin/config [get]
 func adminGetConfig(c *gin.Context, deps adminDeps) {
 	cfg, err := config.Load(deps.cfgPath)
 	if err != nil {
@@ -103,6 +124,20 @@ type putConfigReq struct {
 	Server     *config.ServerConfig     `json:"server"`
 }
 
+// adminPutConfig 写入配置。
+//
+//	@Summary		写入配置
+//	@Description	按字段部分更新配置（传 nil 的字段保持不变），threads 需在 0-32 之间。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Accept			json
+//	@Produce		json
+//	@Security		AdminToken
+//	@Param			body	body		putConfigReq	true	"配置字段（可选部分更新）"
+//	@Success		200	{object}	apiEnvelope
+//	@Failure		400	{object}	apiEnvelope	"请求体错误或参数越界"
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/admin/config [put]
 func adminPutConfig(c *gin.Context, deps adminDeps) {
 	var req putConfigReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,6 +178,20 @@ type triggerReq struct {
 	Force bool `json:"force"`
 }
 
+// adminTriggerUpdate 异步触发一次更新（下载最新导出并导入/换库）。
+//
+//	@Summary		触发数据更新
+//	@Description	异步触发：下载 Archive 最新导出 → 导入临时库 → 完整性检查 → 原子换库。进度经 /api/admin/status 或 public-status 流获取。已有更新/迁移进行中时返回 409。
+//	@Tags			管理
+//	@Accept			json
+//	@Produce		json
+//	@Security		AdminToken
+//	@Param			body	body		triggerReq	false	"触发参数"
+//	@Param			force	query		string		false	"忽略版本一致性检查"	Enums(1, true)
+//	@Success		200	{object}	apiEnvelope
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Failure		409	{object}	apiEnvelope	"已有更新进行中"
+//	@Router			/api/admin/update [post]
 func adminTriggerUpdate(c *gin.Context, deps adminDeps) {
 	var req triggerReq
 	_ = c.ShouldBindJSON(&req)
@@ -161,22 +210,62 @@ func adminTriggerUpdate(c *gin.Context, deps adminDeps) {
 	respOK(c, gin.H{"started": true, "force": req.Force})
 }
 
+// adminCancel 取消正在进行的更新。
+//
+//	@Summary		取消更新
+//	@Description	请求取消当前正在进行的更新流程。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		json
+//	@Security		AdminToken
+//	@Success		200	{object}	apiEnvelope
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/cancel [post]
 func adminCancel(c *gin.Context, deps adminDeps) {
 	deps.mgr.Cancel()
 	respOK(c, gin.H{"cancelled": true})
 }
 
+// adminReset 清除成功/失败状态提示（状态机回到 idle）。
+//
+//	@Summary		重置状态提示
+//	@Description	清除上一次更新/迁移的成功或失败状态提示。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		json
+//	@Security		AdminToken
+//	@Success		200	{object}	apiEnvelope
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/reset [post]
 func adminReset(c *gin.Context, deps adminDeps) {
 	deps.mgr.Reset()
 	respOK(c, gin.H{"reset": true})
 }
 
+// adminLogs 当前日志快照。
+//
+//	@Summary		管理日志快照
+//	@Description	返回当前状态与最近的管理操作日志。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		json
+//	@Security		AdminToken
+//	@Success		200	{object}	apiEnvelope
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/logs [get]
 func adminLogs(c *gin.Context, deps adminDeps) {
 	st := deps.mgr.Status()
 	respOK(c, gin.H{"logs": st.Logs, "state": st.State})
 }
 
 // adminLogsStream SSE 推送实时日志。
+// adminLogsStream SSE 推送实时日志。
+//
+//	@Summary		管理日志 SSE 推送
+//	@Description	text/event-stream，事件名 log，实时推送管理操作与导入进度日志。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		text/event-stream
+//	@Security		AdminToken
+//	@Success		200	{string}	string	"SSE 流（事件 log）"
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/logs/stream [get]
 func adminLogsStream(c *gin.Context, deps adminDeps) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -202,6 +291,15 @@ func adminLogsStream(c *gin.Context, deps adminDeps) {
 }
 
 // adminStatusStream SSE 推送状态（鉴权），即时推送 + 间隔推送（更新中 3s，空闲 15s）
+//
+//	@Summary		管理状态 SSE 推送
+//	@Description	text/event-stream，事件名 status，含完整状态（日志、统计）；维护中 3s、空闲 15s。需管理员 token（除非未配置）。
+//	@Tags			管理
+//	@Produce		text/event-stream
+//	@Security		AdminToken
+//	@Success		200	{string}	string	"SSE 流（事件 status）"
+//	@Failure		401	{object}	apiEnvelope	"token 无效"
+//	@Router			/api/admin/status/stream [get]
 func adminStatusStream(c *gin.Context, deps adminDeps) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -237,7 +335,31 @@ func adminStatusStream(c *gin.Context, deps adminDeps) {
 	})
 }
 
+// adminPublicStatus 公开状态快照（免鉴权），仅返回状态与 db 存在性，不暴露日志。
+//
+//	@Summary		公开状态快照（免鉴权）
+//	@Description	供前端开箱检测：更新/迁移状态与数据库存在性，不包含日志。
+//	@Tags			管理
+//	@Produce		json
+//	@Success		200	{object}	apiEnvelope{data=adminStatusData}
+//	@Router			/api/admin/public-status [get]
+func adminPublicStatus(c *gin.Context, deps adminDeps) {
+	st := deps.mgr.Status()
+	c.JSON(200, gin.H{"ok": true, "data": gin.H{
+		"state":     st.State,
+		"db_exists": st.DBExists,
+		"progress":  st.Progress,
+	}})
+}
+
 // adminPublicStatusStream SSE 推送公开状态（免鉴权），用于横幅
+//
+//	@Summary		公开状态 SSE 推送（免鉴权）
+//	@Description	text/event-stream，事件名 status，维护中 5s、空闲 15s，首包即时；驱动前端「更新/迁移中」横幅。
+//	@Tags			管理
+//	@Produce		text/event-stream
+//	@Success		200	{string}	string	"SSE 流（事件 status）"
+//	@Router			/api/admin/public-status/stream [get]
 func adminPublicStatusStream(c *gin.Context, deps adminDeps) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")

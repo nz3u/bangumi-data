@@ -12,6 +12,14 @@ import (
 )
 
 // health 健康检查；附带编译期注入的版本号，供前端页头展示（前后端版本同源）。
+//
+//	@Summary		健康检查
+//	@Description	检查数据库可用性，并返回编译期注入的服务版本号（与发布标签一致）。
+//	@Tags			服务状态
+//	@Produce		json
+//	@Success		200	{object}	apiEnvelope{data=healthData}
+//	@Failure		500	{object}	apiEnvelope	"数据库不可用"
+//	@Router			/api/health [get]
 func (h *handler) health(c *gin.Context) {
 	if err := h.getDB().Ping(); err != nil {
 		fail(c, 500, "数据库不可用: "+err.Error())
@@ -21,6 +29,13 @@ func (h *handler) health(c *gin.Context) {
 }
 
 // healthStream SSE 推送健康状态（在线检查），间隔 30s（比之前 60s 轮询更短），首包即时
+//
+//	@Summary		健康状态 SSE 推送
+//	@Description	text/event-stream，事件名 health，30s 间隔心跳，首包即时；断开由调用方处理。
+//	@Tags			服务状态
+//	@Produce		text/event-stream
+//	@Success		200	{string}	string	"SSE 流（事件 health：{"status":"ok|error","version":"..."}）"
+//	@Router			/api/health/stream [get]
 func (h *handler) healthStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -58,6 +73,13 @@ func (h *handler) healthStream(c *gin.Context) {
 // database 为空表示本地无版本记录（旧版本程序创建的库，前端显示「旧版本」）；
 // latest 为空表示尚未成功获取上游元信息（离线等），此时不提示可更新；
 // update_available=true 时前端展示更新提醒。
+//
+//	@Summary		数据库版本状态
+//	@Description	对比本地数据库版本记录与 Archive 最新导出，供前端右下角徽标与更新提醒展示。
+//	@Tags			服务状态
+//	@Produce		json
+//	@Success		200	{object}	apiEnvelope{data=dbinfoData}
+//	@Router			/api/dbinfo [get]
 func (h *handler) dbInfo(c *gin.Context) {
 	if h.dbver == nil {
 		respOK(c, gin.H{"database": nil, "latest": nil, "update_available": false})
@@ -67,6 +89,14 @@ func (h *handler) dbInfo(c *gin.Context) {
 }
 
 // stats 各表行数统计（用于确认导入状态）。
+//
+//	@Summary		各表行数统计
+//	@Description	返回 subjects/persons/characters/episodes 及各关联表的行数，用于确认导入状态。
+//	@Tags			服务状态
+//	@Produce		json
+//	@Success		200	{object}	apiEnvelope{data=statsData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/stats [get]
 func (h *handler) stats(c *gin.Context) {
 	tables := []string{
 		"subjects", "persons", "characters", "episodes",
@@ -86,6 +116,13 @@ func (h *handler) stats(c *gin.Context) {
 }
 
 // statsStream SSE 推送统计（与 health 同频 30s，首包即时）- 保留兼容，新逻辑请用 systemStream
+//
+//	@Summary		表行数统计 SSE 推送
+//	@Description	text/event-stream，事件名 stats，30s 间隔，首包即时。保留兼容，新逻辑请用 /api/system/stream。
+//	@Tags			服务状态
+//	@Produce		text/event-stream
+//	@Success		200	{string}	string	"SSE 流（事件 stats）"
+//	@Router			/api/stats/stream [get]
 func (h *handler) statsStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -130,6 +167,13 @@ func (h *handler) statsStream(c *gin.Context) {
 }
 
 // systemStream 合并 health + stats 的 SSE（30s 间隔，与 health 相同，首包即时）
+//
+//	@Summary		健康状态与表行数合并 SSE 推送
+//	@Description	text/event-stream，事件名 system，载荷 {"health":{...},"stats":{...}}，30s 间隔，首包即时。
+//	@Tags			服务状态
+//	@Produce		text/event-stream
+//	@Success		200	{string}	string	"SSE 流（事件 system）"
+//	@Router			/api/system/stream [get]
 func (h *handler) systemStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -175,6 +219,13 @@ func (h *handler) systemStream(c *gin.Context) {
 }
 
 // constants 返回全部 id 常量映射，前端据此渲染分类名称。
+//
+//	@Summary		全部 id 常量映射
+//	@Description	类型/平台/关联/职位等 id -> 中文名常量（键为 JSON 字符串化的 id），前端据此渲染分类名称。
+//	@Tags			服务状态
+//	@Produce		json
+//	@Success		200	{object}	apiEnvelope{data=constantsData}
+//	@Router			/api/constants [get]
 func (h *handler) constants(c *gin.Context) {
 	cons := h.cons
 	respOK(c, gin.H{

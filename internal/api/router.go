@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"bangumi-subject-go/internal/admin"
 	"bangumi-subject-go/internal/common"
@@ -98,6 +100,14 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 		api.GET("/characters/:id", h.getCharacter)
 	}
 
+	// 交互式 API 文档（Swagger UI，资源内嵌，离线可用）；
+	// spec 为 OpenAPI 3.0（docs/openapi.json，make docs 生成），运行时注入程序版本号。
+	r.GET("/openapi.json", h.openapiSpec)
+	r.GET("/swagger/*any", ginSwagger.CustomWrapHandler(&ginSwagger.Config{URL: "/openapi.json"}, swaggerFiles.Handler))
+	r.GET("/docs", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/swagger/index.html")
+	})
+
 	if mgr != nil {
 		if dataDir == "" {
 			dataDir = "data"
@@ -105,13 +115,7 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 		registerAdminRoutes(r, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)}, h)
 		// 供前端开箱检测的轻量接口（无需鉴权）
 		r.GET("/api/admin/public-status", func(c *gin.Context) {
-			st := mgr.Status()
-			// 不暴露日志，仅返回状态与 db 存在性
-			c.JSON(200, gin.H{"ok": true, "data": gin.H{
-				"state":     st.State,
-				"db_exists": st.DBExists,
-				"progress":  st.Progress,
-			}})
+			adminPublicStatus(c, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)})
 		})
 		r.GET("/api/admin/public-status/stream", func(c *gin.Context) {
 			adminPublicStatusStream(c, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)})

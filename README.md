@@ -149,6 +149,11 @@ bangumi version                                               版本号
 
 统一响应：`{"ok": true, "data": ...}`，错误：`{"ok": false, "error": "..."}`。
 
+**交互式文档（Swagger UI）**：服务启动后访问 `/docs` 或 `/swagger/index.html`，可在线浏览并直接调试接口；
+规范为 **OpenAPI 3.0**（`/openapi.json`），由 [swag](https://github.com/swaggo/swag) 从 handler 注解自动生成
+（`make docs`，Swagger 2.0 产物经 openapi2conv 转换，提交在 `docs/`），`info.version` 在运行时注入程序版本号
+（发布构建为 git 标签）；CI 每次构建重新生成并校验是否与提交内容一致。
+
 | 接口 | 说明 |
 |---|---|
 | `GET /api/health` | 健康检查 |
@@ -239,10 +244,11 @@ internal/
   update/              下载最新导出并导入/更新的编排（临时库换库）
   importer/            zip/jsonlines 流式导入（事务批量）
   wiki/                轻量 infobox 解析（完整语法见 bangumi/wiki-parser-go）
-  api/                 REST 接口
-.github/workflows/     CI（Go 测试+前端构建）与 Release 流水线
+  api/                 REST 接口（含 swag 注解，供 docs 自动生成）
+docs/                 swag 自动生成的 OpenAPI 规范与嵌入包（make docs）
+.github/workflows/     CI（Go 测试+前端构建+API 文档一致性、Release 流水线）
 Dockerfile / docker-compose.yml
-Makefile               make build / make serve 快捷命令
+Makefile               make build / make serve / make docs 快捷命令
 ```
 
 ## 发布

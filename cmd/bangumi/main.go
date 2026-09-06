@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	// docs 由 swag 从 handler 注解自动生成（make docs），供 /swagger 文档页读取
+	_ "bangumi-subject-go/docs"
 	"bangumi-subject-go/internal/admin"
 	"bangumi-subject-go/internal/api"
 	"bangumi-subject-go/internal/common"
@@ -32,6 +34,20 @@ import (
 	// （取自 git 标签）；本地或 CI 直接 go build 时为 "dev"，避免误报固定版本。
 	var version = "dev"
 
+// @title						Bangumi 本地数据搜索 API
+// @version					1.0
+// @description					本地化的 Bangumi 数据服务。利用 Archive 每周导出的 wiki 数据导入本地 SQLite，
+// @description					提供条目/人物/角色/章节等 REST 查询接口与单二进制管理接口。
+// @description					统一响应包装：成功 {"ok": true, "data": ...}；失败 {"ok": false, "error": "..."}。
+// @description					数据接口均为只读；管理接口（/api/admin/*）需要 X-Admin-Token 请求头（未配置 token 时放行）。
+// @description					交互式文档：/docs 或 /swagger/index.html；本文档由 swag 从代码注解自动生成（make docs）。
+// @contact.name				GitHub
+// @contact.url					https://github.com/nz3u/bangumi-data
+// @license.name				AGPL-3.0
+// @license.url					https://www.gnu.org/licenses/agpl-3.0.html
+// @securityDefinitions.apikey	AdminToken
+// @in							header
+// @name						X-Admin-Token
 func main() {
 	if len(os.Args) < 2 {
 		// 无参直接进入智能启动：等价于 serve（自动处理初始化/更新/服务）

@@ -9,7 +9,32 @@ import (
 	"bangumi-subject-go/internal/wiki"
 )
 
+// personBrief 人物搜索条目。
+type personBrief struct {
+	ID       int64    `json:"id"`
+	Name     string   `json:"name"`
+	NameCN   string   `json:"name_cn"`
+	Type     int      `json:"type"`
+	TypeName string   `json:"type_name"`
+	Career   []string `json:"career"`
+	Comments int      `json:"comments"`
+	Collects int      `json:"collects"`
+}
+
 // searchPersons 人物搜索。
+// 短于 trigram 最小长度的关键词自动回退 LIKE 子串匹配。
+//
+//	@Summary		人物搜索
+//	@Description	q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。
+//	@Tags			人物
+//	@Produce		json
+//	@Param			q		query		string	false	"关键词"
+//	@Param			type	query		integer	false	"人物类型：1 个人 / 2 公司 / 3 组合"	Enums(1, 2, 3)
+//	@Param			page	query		integer	false	"页码"	default(1)
+//	@Param			size	query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=personSearchData}
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/search [get]
 func (h *handler) searchPersons(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
@@ -78,16 +103,6 @@ func (h *handler) searchPersons(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	type personBrief struct {
-		ID       int64    `json:"id"`
-		Name     string   `json:"name"`
-		NameCN   string   `json:"name_cn"`
-		Type     int      `json:"type"`
-		TypeName string   `json:"type_name"`
-		Career   []string `json:"career"`
-		Comments int      `json:"comments"`
-		Collects int      `json:"collects"`
-	}
 	items := make([]personBrief, 0, size)
 	for rows.Next() {
 		var it personBrief
@@ -143,6 +158,17 @@ type personDetail struct {
 
 // getPerson 人物详情。关联人物/角色不再在此返回：
 // 前端改用 /persons/:id/collaborators（人物合作）接口。
+//
+//	@Summary		人物详情
+//	@Description	含基本信息、infobox（结构化字段）、简介与参与/出演统计。
+//	@Tags			人物
+//	@Produce		json
+//	@Param			id	path		integer	true	"人物 ID"
+//	@Success		200	{object}	apiEnvelope{data=personDetail}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		404	{object}	apiEnvelope	"人物不存在"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id} [get]
 func (h *handler) getPerson(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -208,6 +234,20 @@ type workItem struct {
 
 // getPersonWorks 人物参与的作品列表。
 // 参数：position（职位过滤）、subject_type、page、size。
+//
+//	@Summary		人物参与的作品列表
+//	@Description	制作人员（subject-persons）关联的作品，可按职位与作品类型过滤，按日期降序。
+//	@Tags			人物
+//	@Produce		json
+//	@Param			id				path		integer	true	"人物 ID"
+//	@Param			position		query		integer	false	"职位 ID（作品类型:职位，取值见 /api/constants 的 staffs）"
+//	@Param			subject_type	query		integer	false	"作品类型过滤"	Enums(1, 2, 3, 4, 6)
+//	@Param			page			query		integer	false	"页码"	default(1)
+//	@Param			size			query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=personWorksData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/works [get]
 func (h *handler) getPersonWorks(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
@@ -277,6 +317,18 @@ type collaboratorItem struct {
 // getPersonCollaborators 与「X」合作的人物（按共同作品数降序）。
 // 对应前端「与 X 合作的人物」板块（见 example.html）。
 // 参数：page、size。
+//
+//	@Summary		与「X」合作的人物
+//	@Description	按共同参与的作品数降序分页返回（含声优等出演关联）。
+//	@Tags			人物
+//	@Produce		json
+//	@Param			id		path		integer	true	"人物 ID"
+//	@Param			page	query		integer	false	"页码"	default(1)
+//	@Param			size	query		integer	false	"每页数量"	default(30)
+//	@Success		200	{object}	apiEnvelope{data=collaboratorsData}
+//	@Failure		400	{object}	apiEnvelope	"无效的 id"
+//	@Failure		500	{object}	apiEnvelope
+//	@Router			/api/persons/{id}/collaborators [get]
 func (h *handler) getPersonCollaborators(c *gin.Context) {
 	id, found := intParam(c, "id")
 	if !found {
