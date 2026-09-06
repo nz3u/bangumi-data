@@ -91,4 +91,5 @@ jobs:
       - name: Check API docs up to date
         run: |
           go run github.com/swaggo/swag/cmd/swag init -d . -g cmd/bangumi/main.go -o docs --parseDependency --parseInternal
+          go run ./cmd/openapiconv
           git diff --exit-code docs/

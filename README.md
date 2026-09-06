@@ -150,8 +150,9 @@ bangumi version                                               版本号
 统一响应：`{"ok": true, "data": ...}`，错误：`{"ok": false, "error": "..."}`。
 
 **交互式文档（Swagger UI）**：服务启动后访问 `/docs` 或 `/swagger/index.html`，可在线浏览并直接调试接口；
-OpenAPI 规范由 [swag](https://github.com/swaggo/swag) 从 handler 注解自动生成（`make docs`，产物提交在 `docs/`），
-CI 每次构建重新生成并校验是否与提交内容一致；spec JSON 也可通过 `/swagger/doc.json` 获取。
+规范为 **OpenAPI 3.0**（`/openapi.json`），由 [swag](https://github.com/swaggo/swag) 从 handler 注解自动生成
+（`make docs`，Swagger 2.0 产物经 openapi2conv 转换，提交在 `docs/`），`info.version` 在运行时注入程序版本号
+（发布构建为 git 标签）；CI 每次构建重新生成并校验是否与提交内容一致。
 
 | 接口 | 说明 |
 |---|---|

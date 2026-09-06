@@ -101,8 +101,9 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 	}
 
 	// 交互式 API 文档（Swagger UI，资源内嵌，离线可用）；
-	// spec 由 swag 从 handler 注解自动生成（make docs）。
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// spec 为 OpenAPI 3.0（docs/openapi.json，make docs 生成），运行时注入程序版本号。
+	r.GET("/openapi.json", h.openapiSpec)
+	r.GET("/swagger/*any", ginSwagger.CustomWrapHandler(&ginSwagger.Config{URL: "/openapi.json"}, swaggerFiles.Handler))
 	r.GET("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/swagger/index.html")
 	})
