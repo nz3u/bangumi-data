@@ -153,6 +153,21 @@ func TestSearchEpisodesFTS(t *testing.T) {
 	_, ids = doGetEpisodes(t, h, "airdate_from=2020-12-01&airdate_to=2021-12-31")
 	wantIDs(t, ids, 101)
 
+	// 短关键词（<3 字符）走命中集临时表路径：章节标题 + 所属条目标题双路命中
+	_, ids = doGetEpisodes(t, h, "q=舞台")
+	wantIDs(t, ids, 101, 102, 106, 105)
+
+	// 短关键词 + 筛选：计数与取数都需经命中集回表过滤（回归：筛选参数需传入计数查询）
+	ftotal, fids := doGetEpisodes(t, h, "q=舞台&ep_type=2")
+	if ftotal != 1 {
+		t.Fatalf("短关键词+筛选 total = %d, want 1", ftotal)
+	}
+	wantIDs(t, fids, 106)
+
+	// 无检索词（浏览全部）：按 ID 升序
+	_, ids = doGetEpisodes(t, h, "")
+	wantIDs(t, ids, 101, 102, 103, 104, 105, 106)
+
 	// 纯符号查询词：不参与索引，返回空集
 	total, ids := doGetEpisodes(t, h, "q=！！！")
 	if total != 0 || len(ids) != 0 {
