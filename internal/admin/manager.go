@@ -29,10 +29,11 @@ import (
 type State string
 
 const (
-	StateIdle     State = "idle"
-	StateUpdating State = "updating"
-	StateSuccess  State = "success"
-	StateFailed   State = "failed"
+	StateIdle      State = "idle"
+	StateUpdating  State = "updating"
+	StateMigrating State = "migrating"
+	StateSuccess   State = "success"
+	StateFailed    State = "failed"
 )
 
 // Status 对外暴露的状态（供 API 返回）。
@@ -107,11 +108,39 @@ func NewManager(dbPath, commonDir string, dbConn *sql.DB, vc *update.VersionChec
 	}
 }
 
-// IsUpdating 是否处于更新中（供中间件判断维护模式）。
+// IsUpdating 是否处于更新中或结构迁移中（供中间件判断维护模式）。
 func (m *Manager) IsUpdating() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.state == StateUpdating
+	return m.state == StateUpdating || m.state == StateMigrating
+}
+
+// BeginMigration 进入数据库结构迁移维护模式（serve 启动后台迁移时调用）。
+// 正在进行更新时为空操作（更新流程自身已处于维护模式）。
+func (m *Manager) BeginMigration() {
+	m.mu.Lock()
+	if m.state != StateIdle {
+		m.mu.Unlock()
+		return
+	}
+	m.state = StateMigrating
+	m.progress = "数据库升级/迁移中..."
+	m.mu.Unlock()
+	m.AppendLog("=== 数据库结构迁移开始 ===")
+	m.broadcastStatus()
+}
+
+// EndMigration 结束结构迁移维护模式，恢复空闲状态。
+func (m *Manager) EndMigration() {
+	m.mu.Lock()
+	was := m.state
+	m.state = StateIdle
+	m.progress = ""
+	m.mu.Unlock()
+	if was == StateMigrating {
+		m.AppendLog("=== 数据库结构迁移结束 ===")
+		m.broadcastStatus()
+	}
 }
 
 // DB 返回当前 DB 连接（并发安全）。
@@ -260,16 +289,16 @@ func (m *Manager) broadcastStatus() {
 func (m *Manager) CanTrigger() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.state != StateUpdating
+	return m.state != StateUpdating && m.state != StateMigrating
 }
 
 // Trigger 同步触发一次更新（阻塞直到完成）。force 为 true 时忽略版本一致性检查。
 // 调用方应确保 CanTrigger() 为真，否则返回错误。
 func (m *Manager) Trigger(ctx context.Context, force bool) error {
 	m.mu.Lock()
-	if m.state == StateUpdating {
+	if m.state == StateUpdating || m.state == StateMigrating {
 		m.mu.Unlock()
-		return fmt.Errorf("已有更新正在进行中")
+		return fmt.Errorf("已有更新/迁移正在进行中")
 	}
 	m.state = StateUpdating
 	m.progress = "准备更新..."
@@ -529,7 +558,7 @@ func (m *Manager) reopenDB() error {
 // Reset 状态重置为 idle（供前端手动清除成功/失败提示）。
 func (m *Manager) Reset() {
 	m.mu.Lock()
-	if m.state != StateUpdating {
+	if m.state != StateUpdating && m.state != StateMigrating {
 		m.state = StateIdle
 		m.progress = ""
 		m.lastError = ""

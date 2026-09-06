@@ -511,17 +511,22 @@ func cmdServe(args []string) error {
 		return err
 	}
 	// conn 的生命周期由 Manager 接管（更新时会关闭重开），此处不 defer 关闭，而是由 shutdown 时通过 Manager 关闭
-	// 幂等补建增量索引（已存在时空操作；首次升级构建数秒）
-	start := time.Now()
-	if err := db.EnsureIndexes(conn); err != nil {
-		// 若数据库为空（刚创建），EnsureIndexes 会创建裸表，可能报错则不阻塞启动
-		log.Printf("EnsureIndexes: %v", err)
-	}
-	if err := db.UpgradeSchema(conn); err != nil {
-		log.Printf("UpgradeSchema: %v", err)
-	}
-	if d := time.Since(start); d > time.Second {
-		log.Printf("索引/数据升级完成（%s）", d.Round(time.Millisecond))
+	// 结构迁移决策：空库或标记齐全（无需迁移）时走同步快路径，仅毫秒级空操作检查；
+	// 需要迁移时推迟到服务监听之后后台执行（期间维护模式拦截数据接口，
+	// 网页可正常访问并显示升级/迁移横幅），避免迁移耗时阻塞启动导致站点无法访问。
+	needsUpgrade := db.NeedsUpgrade(conn)
+	if !needsUpgrade {
+		start := time.Now()
+		if err := db.EnsureIndexes(conn); err != nil {
+			// 若数据库为空（刚创建），EnsureIndexes 会创建裸表，可能报错则不阻塞启动
+			log.Printf("EnsureIndexes: %v", err)
+		}
+		if err := db.UpgradeSchema(conn); err != nil {
+			log.Printf("UpgradeSchema: %v", err)
+		}
+		if d := time.Since(start); d > time.Second {
+			log.Printf("索引/数据升级完成（%s）", d.Round(time.Millisecond))
+		}
 	}
 
 	// 人物头像图片库：与主库同目录的 bgm_pic.db；
@@ -559,6 +564,25 @@ func cmdServe(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// 需要结构迁移/回填时：服务已进入监听状态，转入后台执行并保持维护模式
+	// （/api 返回维护中，前端横幅提示），完成后自动恢复。
+	if needsUpgrade {
+		log.Printf("检测到数据库需要结构迁移/回填，转入后台执行（期间数据接口处于维护模式，网页可正常访问）")
+		mgr.BeginMigration()
+		go func() {
+			migStart := time.Now()
+			if err := db.EnsureIndexes(conn); err != nil {
+				log.Printf("EnsureIndexes: %v", err)
+			}
+			if err := db.UpgradeSchema(conn); err != nil {
+				log.Printf("UpgradeSchema: %v", err)
+				mgr.AppendLog("数据库结构迁移失败: " + err.Error())
+			}
+			mgr.EndMigration()
+			log.Printf("数据库结构迁移完成（%s）", time.Since(migStart).Round(time.Millisecond))
+		}()
+	}
 
 	go func() {
 		// 初始化提示

@@ -240,6 +240,54 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	assertFTSHit(t, conn, "persons_fts", "测试中文", 1) // FTS 正常可用
 }
 
+// TestNeedsUpgradeAndEmptyDB 验证 NeedsUpgrade 的判定与空库升级的静默行为：
+// 空库无需迁移（避免启动日志出现「0 行」操作记录），升级后 FTS 表可用。
+func TestNeedsUpgradeAndEmptyDB(t *testing.T) {
+	// 空库（裸表无数据）：无需迁移
+	conn := openTestDB(t)
+	if err := InitSchema(conn); err != nil {
+		t.Fatalf("InitSchema: %v", err)
+	}
+	if NeedsUpgrade(conn) {
+		t.Error("空库应无需迁移")
+	}
+	// 空库升级应静默完成，且 FTS 表存在（避免空表导致查询接口报错）
+	if err := UpgradeSchema(conn); err != nil {
+		t.Fatalf("UpgradeSchema(空库): %v", err)
+	}
+	for _, ft := range []string{"subjects_fts", "persons_fts", "characters_fts", "episodes_fts"} {
+		has, err := tableExists(conn, ft)
+		if err != nil || !has {
+			t.Errorf("空库升级后缺少 %s (err=%v)", ft, err)
+		}
+	}
+	// 幂等
+	if err := UpgradeSchema(conn); err != nil {
+		t.Fatalf("UpgradeSchema(空库二次): %v", err)
+	}
+
+	// 存量库（有数据、标记缺失）：需要迁移
+	legacy := openTestDB(t)
+	if err := ExecMulti(legacy, legacySchema); err != nil {
+		t.Fatalf("建旧表: %v", err)
+	}
+	mustExec(t, legacy, "INSERT INTO subjects (id, type, name, tags, meta_tags) VALUES (1, 2, 'x', '[]', '[]')")
+	mustExec(t, legacy, "INSERT INTO episodes (id, name, subject_id) VALUES (10, 'ep', 1)")
+	if !NeedsUpgrade(legacy) {
+		t.Error("存量库应需要迁移")
+	}
+	// 迁移 + 补建增量索引后：无需迁移
+	if err := EnsureIndexes(legacy); err != nil {
+		t.Fatalf("EnsureIndexes: %v", err)
+	}
+	if err := UpgradeSchema(legacy); err != nil {
+		t.Fatalf("UpgradeSchema: %v", err)
+	}
+	if NeedsUpgrade(legacy) {
+		t.Error("迁移完成后的库应无需再次迁移")
+	}
+}
+
 func mustExec(t *testing.T, conn *sql.DB, q string) {
 	t.Helper()
 	if _, err := conn.Exec(q); err != nil {
