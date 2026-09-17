@@ -8,6 +8,8 @@ services:
     environment:
       BANGUMI_DB: /app/data/bangumi.db
       BANGUMI_LISTEN: ":8080"
+      # 日志时间戳与自动更新调度（每周三 05:30 UTC+8）对齐
+      TZ: Asia/Shanghai
     volumes:
       # 数据持久化：SQLite 文件
       - ./data:/app/data
@@ -23,6 +25,7 @@ services:
     entrypoint: ["/app/bangumi", "update"]
     environment:
       BANGUMI_DB: /app/data/bangumi.db
+      TZ: Asia/Shanghai
 
   # 示例：导入数据（把 dump 放到 ./data/ 下）
   #   docker compose run --rm import /app/data/dump-xxx.zip
