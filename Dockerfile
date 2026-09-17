@@ -30,6 +30,8 @@ RUN VERSION="${VERSION#v}" && \
 # 运行阶段
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
+# 日志时间戳使用 UTC+8：自动更新按 UTC+8（每周三 05:30）调度，日志与之对齐便于排查
+ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY --from=build /out/bangumi /app/bangumi
 

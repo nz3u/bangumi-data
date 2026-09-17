@@ -34,6 +34,7 @@ type Status struct {
 
 // VersionChecker 维护数据库版本与 Archive 最新导出的对比：
 //   - 上游部分（latest.json）后台定时拉取并缓存（离线时静默降级）；
+//     需要「决策前的最新上游信息」时用 CheckNow 强制实时拉取，不要读缓存；
 //   - 本地部分（config.json 版本记录、库文件存在性）在每次 Status() 时实时读取，
 //     因此 serve 运行期间执行 bangumi update 后，前端下次请求即反映新状态；
 //   - 检查到落后时打印一次日志提醒。
@@ -60,6 +61,14 @@ func NewVersionChecker(dbPath string) *VersionChecker {
 	}
 }
 
+// SetLatestURL 覆盖上游 latest.json 地址，空串恢复为 download.LatestURL。
+// 用于镜像/代理场景与测试。
+func (vc *VersionChecker) SetLatestURL(u string) {
+	vc.mu.Lock()
+	vc.latestURL = u
+	vc.mu.Unlock()
+}
+
 // Start 启动后台检查：立即执行一次，之后每 interval 刷新一次，直到 ctx 取消。
 func (vc *VersionChecker) Start(ctx context.Context, interval time.Duration) {
 	go func() {
@@ -77,7 +86,8 @@ func (vc *VersionChecker) Start(ctx context.Context, interval time.Duration) {
 	}()
 }
 
-// Status 当前对比结果。本地状态实时读取，仅上游结果来自缓存：
+// Status 当前对比结果。本地状态实时读取，仅上游结果来自缓存
+// （最长滞后 DefaultCheckInterval，需要实时结果请用 CheckNow）：
 //
 //	database 为空            -> 本地无版本记录（旧库），有上游信息即视为可更新
 //	latest 为空              -> 离线或尚未完成首次检查，不判定新旧（update_available=false）
@@ -108,30 +118,45 @@ func (vc *VersionChecker) Status() Status {
 	return st
 }
 
+// CheckNow 立即拉取一次上游最新导出信息（不使用后台缓存）并返回刷新后的对比结果。
+// 后台复查周期为 DefaultCheckInterval，缓存最长可能滞后这么久；凡是需要
+// 「决策前拿到实时上游信息」的场景（如自动更新调度）都必须用本方法，否则可能
+// 依据发布前的旧缓存判定「已是最新」而漏掉刚发布的导出。
+// 返回值 error 为本次上游拉取错误（离线或上游不可达）；此时 Status 中仍是上次
+// 成功获取的缓存（可能为 nil），调用方不应据此断定「已是最新」。
+func (vc *VersionChecker) CheckNow(ctx context.Context) (Status, error) {
+	err := vc.check(ctx)
+	return vc.Status(), err
+}
+
 // checkOnce 执行一次上游检查并更新缓存；失败时保留原缓存、连续失败只打一条日志。
 func (vc *VersionChecker) checkOnce(ctx context.Context) {
+	_ = vc.check(ctx)
+}
+
+// check 执行一次上游检查并更新缓存；失败时保留原缓存并返回错误。
+func (vc *VersionChecker) check(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, latestTimeout)
 	defer cancel()
 
 	rel, err := download.FetchLatest(cctx, vc.url())
 
 	vc.mu.Lock()
+	vc.checked = time.Now()
 	if err != nil {
 		if !vc.offline {
 			vc.offline = true
 			log.Printf("dbver: 暂无法获取最新导出信息（离线或上游不可达: %s）；本地功能不受影响，每 %s 自动重试",
 				err.Error(), DefaultCheckInterval)
 		}
-		vc.checked = time.Now()
 		vc.mu.Unlock()
-		return
+		return err
 	}
 	if vc.offline {
 		vc.offline = false
 		log.Printf("dbver: 已恢复与上游的连接，最新导出 %s", rel.Name)
 	}
 	vc.latest = &LatestInfo{Version: rel.Name, PublishedAt: rel.CreatedAt}
-	vc.checked = time.Now()
 	prevWarned := vc.warned
 	vc.mu.Unlock()
 
@@ -148,6 +173,7 @@ func (vc *VersionChecker) checkOnce(ctx context.Context) {
 		vc.warned = false
 		vc.mu.Unlock()
 	}
+	return nil
 }
 
 // localVersion 已记录的本地版本号；未记录返回空串。
@@ -172,6 +198,8 @@ func (vc *VersionChecker) dbExists() bool {
 }
 
 func (vc *VersionChecker) url() string {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 	if vc.latestURL != "" {
 		return vc.latestURL
 	}
