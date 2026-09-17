@@ -254,6 +254,7 @@ func buildCollabPairsCTE(id int64, fb collabRoleFilter) (string, []any) {
 type collabPerson struct {
 	ID       int64        `json:"id"`
 	Name     string       `json:"name"`
+	NameCN   string       `json:"name_cn"` // infobox 提取的简体中文名，空串表示无
 	Type     int          `json:"type"`
 	TypeName string       `json:"type_name"`
 	Career   []string     `json:"career"`
@@ -279,6 +280,7 @@ type collabSubject struct {
 type collabItem struct {
 	PersonID int64            `json:"person_id"`
 	Name     string           `json:"name"`
+	NameCN   string           `json:"name_cn"` // 简体中文名；前端优先展示并与原名一同参与快速筛选
 	Type     int              `json:"type"`
 	TypeName string           `json:"type_name"`
 	Career   []string         `json:"career"`
@@ -324,12 +326,13 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	}
 
 	var (
-		p      model.Person
-		career string
+		p       model.Person
+		pNameCN string
+		career  string
 	)
-	err := h.getDB().QueryRow(`SELECT id, name, type, career, infobox, summary, comments, collects
+	err := h.getDB().QueryRow(`SELECT id, name, name_cn, type, career, infobox, summary, comments, collects
 		FROM persons WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
+		Scan(&p.ID, &p.Name, &pNameCN, &p.Type, &career, &p.Infobox, &p.Summary, &p.Comments, &p.Collects)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			fail(c, 404, "人物不存在")
@@ -340,7 +343,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	}
 
 	person := collabPerson{
-		ID: p.ID, Name: p.Name,
+		ID: p.ID, Name: p.Name, NameCN: pNameCN,
 		Type: p.Type, TypeName: h.cons.PersonTypes[p.Type],
 		Career: parseStrings(career), Summary: p.Summary,
 		Comments: p.Comments, Collects: p.Collects,
@@ -380,7 +383,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 			SELECT other, COUNT(*) AS cnt, COUNT(*) OVER() AS total
 			FROM pairs`+aggJoin+` GROUP BY other
 		)
-		SELECT a.other, p.name, p.type, p.career, p.summary, a.cnt, a.total
+		SELECT a.other, p.name, p.name_cn, p.type, p.career, p.summary, a.cnt, a.total
 		FROM (SELECT * FROM agg ORDER BY cnt DESC, other ASC LIMIT ? OFFSET ?) a
 		JOIN persons p ON p.id = a.other
 		ORDER BY a.cnt DESC, a.other ASC`, args...)
@@ -395,7 +398,7 @@ func (h *handler) getPersonCollaboration(c *gin.Context) {
 	for rows.Next() {
 		var it collabItem
 		var career2 string
-		if err := rows.Scan(&it.PersonID, &it.Name, &it.Type, &career2, &it.Summary, &it.Count, &total); err != nil {
+		if err := rows.Scan(&it.PersonID, &it.Name, &it.NameCN, &it.Type, &career2, &it.Summary, &it.Count, &total); err != nil {
 			rows.Close()
 			fail(c, 500, err.Error())
 			return

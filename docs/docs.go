@@ -2180,6 +2180,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "name_cn": {
+                    "description": "简体中文名；前端优先展示并与原名一同参与快速筛选",
+                    "type": "string"
+                },
                 "person_id": {
                     "type": "integer"
                 },
@@ -2225,6 +2229,10 @@ const docTemplate = `{
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "description": "infobox 提取的简体中文名，空串表示无",
                     "type": "string"
                 },
                 "subjects_count": {
