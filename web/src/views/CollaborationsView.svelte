@@ -4,6 +4,7 @@
   import { getPersonCollaboration, getPersonCollaborationPositions } from '../lib/api.js'
   import { careerCn } from '../lib/format.js'
   import PinyinMatch from 'pinyin-match'
+  import { matchSnippet } from '../lib/match.js'
  import Highlight from '../components/Highlight.svelte'
   import Pagination from '../components/Pagination.svelte'
   import PersonSuggest from '../components/PersonSuggest.svelte'
@@ -297,9 +298,23 @@
   const tagNegCls = 'rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 line-through decoration-red-500 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900'
 
   // ---- 前端快速搜索 ----
-  // 搜索范围覆盖当前页全部展示内容：名称、类型、职业、简介、共同条目（标题/日期/类型/职位）。
-  // 仅作用于当前页，不改变服务端分页与棋盘筛选。
+  // 搜索范围覆盖当前页全部展示内容：名称（简体中文名与原名）、类型、职业、简介、
+  // 共同条目（标题/日期/类型/职位）。仅作用于当前页，不改变服务端分页与棋盘筛选。
   // 命中判定先走原文子串，未命中再尝试拼音全拼/首字母匹配（如 dy→导演）。
+  // 有简体中文名的人物「优先输出简体中文名、原名小一号跟随展示」，
+  // 两个名字都参与筛选，避免出现「能搜到但卡片上看不到对应词」。
+  const personPrimary = (p) => String(p?.name_cn || p?.name || '')
+  const personAlt = (p) => {
+    const cn = String(p?.name_cn ?? '').trim()
+    const nm = String(p?.name ?? '').trim()
+    return cn && nm && cn !== nm ? nm : ''
+  }
+
+  // 简介命中时改展示命中片段：卡片上的简介默认只显示 2 行，
+  // 命中词若在更深处（如京都アニメーション简介里的「鹤冈阳太」）就会被截断，
+  // 出现「筛选出结果却看不见对应词」。片段保证命中词一定可见。
+  const summaryText = (col) => (filter.trim() ? matchSnippet(col.summary, filter) || col.summary : col.summary)
+
   const visibleItems = $derived.by(() => {
     if (!data?.items) return null
     const q = filter.trim().toLowerCase()
@@ -309,6 +324,7 @@
     const rowText = (col) =>
       [
         col.name,
+        col.name_cn,
         col.type_name,
         col.summary,
         ...(col.career ?? []).map(careerCn),
@@ -449,11 +465,16 @@
         <div class="mb-3 flex flex-col items-center">
           <PersonAvatar
             pid={data.person.id}
-            name={data.person.name}
+            name={personPrimary(data.person)}
             onclick={() => openDetail('person', data.person.id, data.person)}
             class="size-32 rounded-lg bg-neutral-200 text-4xl font-bold text-neutral-500 hover:cursor-pointer dark:bg-neutral-800 dark:text-neutral-400"
           />
-          <button type="button" class="mt-2 text-lg font-bold  hover:cursor-pointer" onclick={() => openDetail('person', data.person.id, data.person)}>{data.person.name}</button>
+          <div class="mt-2 flex flex-wrap items-baseline justify-center gap-x-1.5">
+            <button type="button" class="text-lg font-bold  hover:cursor-pointer" onclick={() => openDetail('person', data.person.id, data.person)}>{personPrimary(data.person)}</button>
+            {#if personAlt(data.person)}
+              <span class="text-xs text-neutral-400 dark:text-neutral-500">{personAlt(data.person)}</span>
+            {/if}
+          </div>
           <div class="mt-1 flex flex-wrap justify-center gap-1">
             <span class="chip">{data.person.type_name}</span>
             {#each data.person.career ?? [] as cb}
@@ -577,7 +598,7 @@
         {/if}
 
         <h2 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-semibold subtitle">
-          <span>与「{data.person.name}」合作的人物（{data.total}）</span>
+          <span>与「{personPrimary(data.person)}」合作的人物（{data.total}）</span>
           
           {#if facets && (selA.length > 0 || selB.length > 0 || negSelA.length > 0 || negSelB.length > 0)}
             <span class="text-xs font-normal text-neutral-500 dark:text-neutral-400">
@@ -640,7 +661,7 @@
             {#if filter.trim()}
               <button class="btn-mini" type="button" onclick={() => (filter = '')}>清除</button>
             {/if}
-            <span class="text-xs text-neutral-400">范围：当前页 · 名称、职业、简介、共同条目</span>
+            <span class="text-xs text-neutral-400">范围：当前页 · 名称（中/原名）、职业、简介、共同条目</span>
           </div>
         {/if}
 
@@ -663,16 +684,19 @@
                 <div class="flex min-w-0 w-full gap-3">
                   <PersonAvatar
                     pid={col.person_id}
-                    name={col.name}
+                    name={personPrimary(col)}
                     size="grid"
                     class="size-14 rounded-full hover:cursor-pointer bg-sakura-100 text-xl font-bold text-sakura-700 hover:bg-sakura-200 dark:bg-sakura-950 dark:text-sakura-300 dark:hover:bg-sakura-900"
                     title="左键单击查看该人物的 合作人物，右键单击查看该人物与当前人物的 合作作品"
                     onclick={() => { pidInput = String(col.person_id); pidSel = null; search(col.person_id) }}
-                    oncontextmenu={(e) => { e.preventDefault(); goToTab('/pairworks', { a:data.person.id, b:col.person_id, aName:data.person.name, bName:col.name }) }}
+                    oncontextmenu={(e) => { e.preventDefault(); goToTab('/pairworks', { a:data.person.id, b:col.person_id, aName:personPrimary(data.person), bName:personPrimary(col) }) }}
                   />
                   <div class="min-w-0 flex-1">
-                    <h3 class="flex items-center gap-2">
-                      <button type="button" class="cursor-pointer font-medium text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={col.name} q={filter} scope="filter" /></button>
+                    <h3 class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <button type="button" class="cursor-pointer font-medium text-sakura-600 hover:underline dark:text-sakura-400" onclick={() => openDetail('person', col.person_id, col)}><Highlight text={personPrimary(col)} q={filter} scope="filter" /></button>
+                      {#if personAlt(col)}
+                        <small class="text-xs text-neutral-400 dark:text-neutral-500"><Highlight text={personAlt(col)} q={filter} scope="filter" /></small>
+                      {/if}
                       <small class="text-xs text-neutral-400">(x{col.count})</small>
                       {#if col.subjects.length > COLLAB_PREVIEW_N}
                         {#if !subjExpanded(col.person_id)}
@@ -682,7 +706,7 @@
                           type="button"
                           class="{subjExpanded(col.person_id) ? 'ml-auto' : ''} inline-flex size-5 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-sakura-600 dark:hover:bg-neutral-800 dark:hover:text-sakura-400"
                           title={subjExpanded(col.person_id) ? '收起合作条目' : `展开全部 ${col.subjects.length} 条合作条目`}
-                          aria-label={subjExpanded(col.person_id) ? `收起 ${col.name} 的合作条目` : `展开 ${col.name} 的全部 ${col.subjects.length} 条合作条目`}
+                          aria-label={subjExpanded(col.person_id) ? `收起 ${personPrimary(col)} 的合作条目` : `展开 ${personPrimary(col)} 的全部 ${col.subjects.length} 条合作条目`}
                           onclick={() => toggleSubj(col.person_id)}
                         >
                           <svg
@@ -702,7 +726,7 @@
                       {/each}
                     </div>
                     {#if col.summary}
-                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400"><Highlight text={col.summary} q={filter} scope="filter" /></p>
+                      <p class="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400"><Highlight text={summaryText(col)} q={filter} scope="filter" /></p>
                     {/if}
                     <div class="truncate subject_tag_section mt-2 flex min-w-0 w-full flex-wrap gap-x-3 gap-y-1">
                       {#each shownSubjects(col) as s (s.id)}
