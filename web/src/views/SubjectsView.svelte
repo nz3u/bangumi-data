@@ -103,17 +103,22 @@
     return () => clearTimeout(autoTimer)
   })
 
+  let searchId = 0
+
   async function doSearch(p) {
+    const id = ++searchId
     loading = true
     error = ''
     result = null
     try {
-      result = await searchSubjects(p)
+      const next = await searchSubjects(p)
+      if (id !== searchId) return
+      result = next
       tagExpandOverrides = {} // 新结果回到默认收拢状态
     } catch (e) {
-      error = e.message
+      if (id === searchId) error = e.message
     } finally {
-      loading = false
+      if (id === searchId) loading = false
     }
   }
 
