@@ -26,8 +26,8 @@ type handler struct {
 	db      *sql.DB
 	cons    *common.Constants
 	pics    *pics.Service
-	version string                  // 编译期注入的版本号（随 /api/health 返回）
-	dbver   *update.VersionChecker  // 数据库版本检查（/api/dbinfo），可为 nil
+	version string                 // 编译期注入的版本号（随 /api/health 返回）
+	dbver   *update.VersionChecker // 数据库版本检查（/api/dbinfo），可为 nil
 	mgr     *admin.Manager
 }
 
@@ -71,6 +71,7 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 		api.GET("/system/stream", h.systemStream)
 		api.GET("/constants", h.constants)
 		api.GET("/dbinfo", h.dbInfo)
+		api.POST("/wiki/batch", h.wikiBatch)
 
 		// 图片解析（person=人物头像 / subject=条目封面 / character=角色头像）
 		api.GET("/pics/:kind/:id", h.pic)

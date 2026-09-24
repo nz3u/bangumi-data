@@ -867,6 +867,37 @@ definitions:
       force:
         type: boolean
     type: object
+  api.wikiBatchData:
+    properties:
+      tables:
+        additionalProperties:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+        type: object
+      version:
+        type: integer
+    type: object
+  api.wikiBatchRequest:
+    properties:
+      character_ids:
+        items:
+          type: integer
+        type: array
+      include:
+        items:
+          type: string
+        type: array
+      person_ids:
+        items:
+          type: integer
+        type: array
+      subject_ids:
+        items:
+          type: integer
+        type: array
+    type: object
   api.workItem:
     properties:
       appear_eps:
@@ -2242,6 +2273,41 @@ paths:
       summary: 健康状态与表行数合并 SSE 推送
       tags:
       - 服务状态
+  /api/wiki/batch:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 返回指定表的原列数据；关联双向查找，实体资料只展开一层。
+      parameters:
+      - description: ID 与 include 表名
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.wikiBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.apiEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.wikiBatchData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.apiEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.apiEnvelope'
+      summary: 批量获取 wiki dump 原始列
+      tags:
+      - 维基数据
 securityDefinitions:
   AdminToken:
     in: header

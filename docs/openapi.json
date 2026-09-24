@@ -1323,6 +1323,53 @@
                 },
                 "type": "object"
             },
+            "api.wikiBatchData": {
+                "properties": {
+                    "tables": {
+                        "additionalProperties": {
+                            "items": {
+                                "additionalProperties": {},
+                                "type": "object"
+                            },
+                            "type": "array"
+                        },
+                        "type": "object"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "api.wikiBatchRequest": {
+                "properties": {
+                    "character_ids": {
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    },
+                    "include": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "person_ids": {
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    },
+                    "subject_ids": {
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    }
+                },
+                "type": "object"
+            },
             "api.workItem": {
                 "properties": {
                     "appear_eps": {
@@ -3863,6 +3910,71 @@
                 "summary": "健康状态与表行数合并 SSE 推送",
                 "tags": [
                     "服务状态"
+                ]
+            }
+        },
+        "/api/wiki/batch": {
+            "post": {
+                "description": "按 ID 返回指定表的原列数据；关联双向查找，实体资料只展开一层。",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/api.wikiBatchRequest"
+                            }
+                        }
+                    },
+                    "description": "ID 与 include 表名",
+                    "required": true,
+                    "x-originalParamName": "request"
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.apiEnvelope"
+                                        },
+                                        {
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/api.wikiBatchData"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.apiEnvelope"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.apiEnvelope"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "批量获取 wiki dump 原始列",
+                "tags": [
+                    "维基数据"
                 ]
             }
         }

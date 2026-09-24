@@ -1910,6 +1910,64 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/wiki/batch": {
+            "post": {
+                "description": "按 ID 返回指定表的原列数据；关联双向查找，实体资料只展开一层。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "维基数据"
+                ],
+                "summary": "批量获取 wiki dump 原始列",
+                "parameters": [
+                    {
+                        "description": "ID 与 include 表名",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.wikiBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.wikiBatchData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.apiEnvelope"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -3232,6 +3290,53 @@ const docTemplate = `{
             "properties": {
                 "force": {
                     "type": "boolean"
+                }
+            }
+        },
+        "api.wikiBatchData": {
+            "type": "object",
+            "properties": {
+                "tables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.wikiBatchRequest": {
+            "type": "object",
+            "properties": {
+                "character_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "include": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "person_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "subject_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },

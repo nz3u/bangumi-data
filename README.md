@@ -225,6 +225,16 @@ curl "localhost:8080/api/persons/7906/collaboration/596"
 curl "localhost:8080/api/persons/7906/roles"
 ```
 
+### Wiki dump 批量接口
+
+`POST /api/wiki/batch` 按 ID 批量读取当前 data 库的 wiki dump 行。请求示例：
+
+```json
+{"subject_ids":[1,2],"person_ids":[],"character_ids":[],"include":["subjects","episodes","subject_relations","subject_persons","persons"]}
+```
+
+`include` 可选值为 `subjects`、`episodes`、`subject_relations`、`persons`、`characters`、`subject_persons`、`subject_characters`、`person_characters`、`person_relations`。省略时返回全部表。每类 ID 最多 100 个，至少传入一类。响应沿用 `{ "ok": true, "data": ... }`，其中 `data.version` 为 `1`，`data.tables` 按表名返回原始列名和数值；未请求的表返回空数组。关联双向查找但保留 dump 中原来的方向；请求了相应实体表时，响应也会带上关联另一端的基础资料（只展开一层）。人物和角色资料根据所请求的关联表自动收集 ID；也可单独传入 ID 获取。已有 `/api/subjects/:id` 等展示接口及其响应不变。
+
 ## 项目结构
 
 ```
