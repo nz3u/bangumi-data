@@ -255,9 +255,14 @@ func importSubjects(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit 
 	}, insert)
 }
 
+// importPersons 导入 persons 表（FTS 由导入完成后的 FinalizeSchema 集合式填充）。
+// 与条目一致，从 infobox 抽取「别名」并算出归一化检索串 search_norm：
+// 别名的子类（罗马字/英文名/日文名/昵称…）只保留值，因此 Mizuki Nana
+// 这类罗马字写法也能命中中文名「水树奈奈」；
+// 罗马字写在顶层 |罗马字= 的资料由 ExtractPersonAliasesText 补齐。
 func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
-	insert, err := conn.Prepare(`INSERT INTO persons (id, name, name_cn, type, career, infobox, summary, comments, collects)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	insert, err := conn.Prepare(`INSERT INTO persons (id, name, name_cn, aliases, search_norm, type, career, infobox, summary, comments, collects)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -266,15 +271,22 @@ func importPersons(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit i
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Person{} }, func(v any) error {
 		p := v.(*model.Person)
 		career, _ := json.Marshal(p.Career)
-		nameCN := wiki.ExtractNameCN(decodeText(p.Infobox))
-		_, err := insert.Exec(p.ID, decodeText(p.Name), nameCN, p.Type, string(career), decodeText(p.Infobox), decodeText(p.Summary), p.Comments, p.Collects)
+		name, summary := decodeText(p.Name), decodeText(p.Summary)
+		infobox := decodeText(p.Infobox)
+		nameCN := wiki.ExtractNameCN(infobox)
+		aliases := wiki.ExtractPersonAliasesText(infobox)
+		_, err := insert.Exec(p.ID, name, nameCN, aliases, norm.Join(name, nameCN, aliases),
+			p.Type, string(career), infobox, summary, p.Comments, p.Collects)
 		return err
 	}, insert)
 }
 
+// importCharacters 导入 characters 表。派生列同 importPersons：
+// 角色别名的「罗马字」（[罗马字|Hirasawa Yui] 或顶层 |罗马字=）由此进入全文索引，
+// 使 Hirasawa Yui 可检索到「平泽唯」。
 func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limit int64) (int64, error) {
-	insert, err := conn.Prepare(`INSERT INTO characters (id, role, name, name_cn, infobox, summary, comments, collects)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	insert, err := conn.Prepare(`INSERT INTO characters (id, role, name, name_cn, aliases, search_norm, infobox, summary, comments, collects)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -282,9 +294,12 @@ func importCharacters(ctx context.Context, dec *json.Decoder, conn *sql.DB, limi
 
 	return streamDecode(ctx, conn, dec, limit, func() any { return &model.Character{} }, func(v any) error {
 		c := v.(*model.Character)
+		name, summary := decodeText(c.Name), decodeText(c.Summary)
 		infobox := decodeText(c.Infobox)
 		nameCN := wiki.ExtractNameCN(infobox)
-		_, err := insert.Exec(c.ID, c.Role, decodeText(c.Name), nameCN, infobox, decodeText(c.Summary), c.Comments, c.Collects)
+		aliases := wiki.ExtractPersonAliasesText(infobox)
+		_, err := insert.Exec(c.ID, c.Role, name, nameCN, aliases, norm.Join(name, nameCN, aliases),
+			infobox, summary, c.Comments, c.Collects)
 		return err
 	}, insert)
 }

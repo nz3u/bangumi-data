@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bangumi-subject-go/internal/model"
+	"bangumi-subject-go/internal/norm"
 	"bangumi-subject-go/internal/wiki"
 )
 
@@ -22,10 +23,12 @@ type personBrief struct {
 }
 
 // searchPersons 人物搜索。
-// 短于 trigram 最小长度的关键词自动回退 LIKE 子串匹配。
+// 关键词与入库侧的 search_norm 同口径归一化（去符号/空白、统一全半角与大小写），
+// 因此在人物的 infobox 别名里出现的罗马字（Mizuki Nana）与各类译名都能命中；
+// ≥3 字符走 trigram 索引，更短自动退化为顺序扫描。
 //
 //	@Summary		人物搜索
-//	@Description	q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。
+//	@Description	q 归一化后匹配原名、infobox 简体中文名与别名（含罗马字，如 Mizuki Nana 可命中水树奈奈）；≥3 字符走全文索引，更短回退子串匹配。
 //	@Tags			人物
 //	@Produce		json
 //	@Param			q		query		string	false	"关键词"
@@ -38,35 +41,42 @@ type personBrief struct {
 func (h *handler) searchPersons(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	var (
-		conds    []string
-		args     []any
-		fullScan bool // LIKE 回退时过滤条件必须逐行求值
+		conds     []string
+		args      []any
+		fullScan  bool   // 大命中集回退主表顺序扫描
+		tierOrder string // 命中集按匹配位置分级排序（仅小命中集启用）
+		tierArgs  []any
 	)
 	if q != "" {
-		if useFTS(q) {
-			ids, err := h.ftsRowIDs("persons_fts", q)
-			if err == nil {
-				if len(ids) == 0 {
-					respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
-					return
-				}
-				placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-				conds = append(conds, "p.id IN ("+placeholders+")")
-				for _, id := range ids {
-					args = append(args, id)
-				}
-			} else {
-				fullScan = true
-				like := "%" + q + "%"
-				conds = append(conds, "(p.name LIKE ? OR p.name_cn LIKE ?)")
-				args = append(args, like, like)
-			}
-		} else {
-			// 短于 trigram 最小长度的关键词无法命中全文索引，回退 LIKE
+		// 归一化结果为空说明查询词只含符号（如「！！！」）——符号不参与索引，
+		// 此时按无匹配处理（返回空集而非全表）。
+		qn := norm.Fold(q)
+		if qn == "" {
+			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+			return
+		}
+		ids, err := h.ftsNormRowIDs("persons_fts", qn)
+		if err != nil {
+			fail(c, 500, err.Error())
+			return
+		}
+		if len(ids) == 0 {
+			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
+			return
+		}
+		if len(ids) > maxEntityFTSIDs {
+			// 命中集过大（多见于 1~2 个字符的宽泛查询）：IN 列表与分级排序的
+			// 代价都超过一次顺序扫描，退回对 search_norm 直接 LIKE。
 			fullScan = true
-			like := "%" + q + "%"
-			conds = append(conds, "(p.name LIKE ? OR p.name_cn LIKE ?)")
-			args = append(args, like, like)
+			conds = append(conds, "p.search_norm LIKE ? ESCAPE '\\'")
+			args = append(args, "%"+escapeLike(qn)+"%")
+		} else {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+			conds = append(conds, "p.id IN ("+placeholders+")")
+			for _, id := range ids {
+				args = append(args, id)
+			}
+			tierOrder, tierArgs = nameTierOrder("p", q)
 		}
 	}
 	if v, ok := parseIntQuery(c, "type"); ok {
@@ -80,7 +90,16 @@ func (h *handler) searchPersons(c *gin.Context) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
-	queryArgs := append(args, size, (page-1)*size)
+	orderBy := "p.id"
+	if tierOrder != "" {
+		orderBy = tierOrder + ", p.id"
+	}
+
+	// ORDER BY 的参数紧跟在 WHERE 参数之后、LIMIT 之前。
+	queryArgs := make([]any, 0, len(args)+len(tierArgs)+2)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, tierArgs...)
+	queryArgs = append(queryArgs, size, (page-1)*size)
 
 	// 计数与取数策略同 searchSubjects：可走索引时拆分查询避免全表物化，
 	// LIKE 回退场景保留 COUNT(*) OVER() 合并为一次扫描。
@@ -96,7 +115,7 @@ func (h *handler) searchPersons(c *gin.Context) {
 	}
 
 	rows, err := h.getDB().Query(`SELECT p.id, p.name, p.name_cn, p.type, p.career, p.comments, p.collects`+countCol+`
-		FROM persons p`+where+` ORDER BY p.id LIMIT ? OFFSET ?`, queryArgs...)
+		FROM persons p`+where+` ORDER BY `+orderBy+` LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		fail(c, 500, err.Error())
 		return

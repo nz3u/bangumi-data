@@ -430,7 +430,7 @@
         },
         "/api/characters/search": {
             "get": {
-                "description": "q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。",
+                "description": "q 归一化后匹配原名、infobox 简体中文名与别名（含罗马字，如 Hirasawa Yui 可命中平泽唯）；≥3 字符走全文索引，更短回退子串匹配。",
                 "produces": [
                     "application/json"
                 ],
@@ -804,7 +804,7 @@
         },
         "/api/persons/search": {
             "get": {
-                "description": "q 匹配原名与 infobox 简体中文名（≥3 字符走全文索引，更短回退 LIKE 子串匹配）。",
+                "description": "q 归一化后匹配原名、infobox 简体中文名与别名（含罗马字，如 Mizuki Nana 可命中水树奈奈）；≥3 字符走全文索引，更短回退子串匹配。",
                 "produces": [
                     "application/json"
                 ],

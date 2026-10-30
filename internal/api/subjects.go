@@ -63,7 +63,7 @@ func (h *handler) searchSubjects(c *gin.Context) {
 			respOK(c, listResp{Total: 0, Page: 1, Size: 30, Items: []any{}})
 			return
 		}
-		ids, err := h.ftsNormRowIDs(qn)
+		ids, err := h.ftsNormRowIDs("subjects_fts", qn)
 		if err != nil {
 			fail(c, 500, err.Error())
 			return

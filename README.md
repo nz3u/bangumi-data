@@ -166,7 +166,7 @@ bangumi version                                               版本号
 | `GET /api/subjects/:id` | 条目详情（双向关联、制作人员、角色、章节数） |
 | `GET /api/subjects/:id/episodes?type=&sort=&page=&size=` | 条目章节列表（`sort=type` 按章节类型分组排序，供条目抽屉使用；默认按集数 sort） |
 | `GET /api/episodes/search?q=&subject_id=&type=&ep_type=&disc=&airdate_from=&airdate_to=&sort=&order=&page=&size=` | 章节搜索/筛选（`q` 同时命中章节标题与所属条目标题的原名/中文名，归一化口径同条目搜索；`type` 为所属条目作品类型，`ep_type` 为章节类型 0正篇/1特别篇/2OP/3ED/4Trailer/5MAD/6其他；`airdate` 为原文文本，范围匹配对 ISO 日期格式有效；`sort` 支持 id/集数(sort)/播出日期(airdate)/条目(subject)/条目人气(popularity)，留空默认——有关键词按匹配分级+条目人气，无关键词按 ID） |
-| `GET /api/persons/search?q=&type=` | 人物搜索（q 匹配原名与 infobox 简体中文名） |
+| `GET /api/persons/search?q=&type=` | 人物搜索（q 归一化后匹配原名、infobox 简体中文名与别名（含罗马字，`Mizuki Nana` 可命中「水树奈奈」）；结果按匹配位置分级：原名/中文名精确＞原名/中文名子串＞仅别名命中） |
 | `GET /api/persons/:id` | 人物详情（含人物/角色关联） |
 | `GET /api/persons/:id/works?position=&subject_type=&page=&size=` | 人物参与的作品（按职位/类型筛选） |
 | `GET /api/persons/:id/collaborators?page=&size=` | 与「X」合作的人物（共同作品数降序） |
@@ -174,7 +174,7 @@ bangumi version                                               版本号
 | `GET /api/persons/:id/collaboration/positions` | 「人物合作」棋盘筛选职位标签：self = 当前人物在共同条目中的职位，other = 合作人物的职位（含 CV）；同名职位跨类型合并（key 为原始键逗号连接，可直接回传筛选），CV 有声优出演即计 |
 | `GET /api/persons/:id/collaboration/:other` | 双人合作：两人物共同参与的条目及双方职务（前端按职位双向合并分组展示） |
 | `GET /api/persons/:id/roles` | 「单人作品」页数据：人物参与的全部条目及职务（含 CV 出演，前端按职务分组） |
-| `GET /api/characters/search?q=&role=` | 角色搜索（q 匹配原名与 infobox 简体中文名） |
+| `GET /api/characters/search?q=&role=` | 角色搜索（q 归一化后匹配原名、infobox 简体中文名与别名（含罗马字，`Hirasawa Yui` 可命中「平泽唯」）；分级排序同上） |
 | `GET /api/characters/:id` | 角色详情（出演作品 + CV） |
 
 ### 搜索示例
@@ -207,6 +207,11 @@ curl "localhost:8080/api/episodes/search?subject_id=265&ep_type=2&sort=sort"
 # 建单列 trigram 索引，查询词同样归一化后匹配；结果按匹配位置分级（原名＞中文名＞
 # 别名＞仅归一化命中）再按人气排序。
 curl "localhost:8080/api/subjects/search?q=少女歌剧"
+
+# 角色/人物按罗马字检索：infobox「别名」→「罗马字」（[罗马字|Hirasawa Yui]）在导入时
+# 抽出并入库（aliases / search_norm），大小写、空格与语序差异都能命中。
+curl "localhost:8080/api/characters/search?q=Hirasawa%20Yui"   # -> 平沢唯 / 平泽唯
+curl "localhost:8080/api/persons/search?q=Mizuki%20Nana"       # -> 水樹奈々 / 水树奈奈
 
 # 与人物 1 合作的声优/制作人员（对应前端合作板块）
 curl "localhost:8080/api/persons/1/collaborators"
@@ -287,6 +292,10 @@ git push origin v0.2.0
   `subjects.search_norm` 单列索引，查询词同口径归一化，因此「少女歌剧」能命中「少女☆歌剧」、
   「Kaguya Hime」能命中别名「Chou Kaguya-hime!」；查询统一走 `LIKE '%x%'`，
   由 SQLite 自动改写为 trigram 索引查找（注意不可加 `ESCAPE`，否则索引改写失效）。
+  人物/角色同构：`persons.search_norm` / `characters.search_norm` = name + name_cn + 别名
+  （`aliases` 只存子类值，罗马字/英文名/日文名/昵称的前缀被剥掉），因此「Hirasawa Yui」
+  这类罗马字、以及「鲁鲁修」「Zero」这类常见译名/别名都能命中；旧库启动迁移会补列回填并
+  重建 `persons_fts` / `characters_fts`（约 32 万行，一次性约 15 秒）。
   章节检索同理：`episodes.search_norm`（章节 name + name_cn 归一化）建 `episodes_fts`，
   「命中所属条目标题」的部分由查询侧复用 `subjects_fts` 完成（OR 合并，multi-index OR
   分别经主键与 subject_id 索引取候选），因此搜条目名可列出其全部章节。

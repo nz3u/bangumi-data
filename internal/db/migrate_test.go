@@ -10,8 +10,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// legacySchema 旧版表结构（persons/characters 无 name_cn，FTS 仅 name 列），
-// 模拟升级前的存量库。
+// legacySchema 旧版表结构（persons/characters 无 name_cn / aliases / search_norm，
+// FTS 仅 name 列），模拟升级前的存量库。
 const legacySchema = `
 CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL,
     name_cn TEXT NOT NULL DEFAULT '', infobox TEXT NOT NULL DEFAULT '', platform INTEGER NOT NULL DEFAULT 0,
@@ -39,12 +39,19 @@ const personInfobox = `{{Infobox Person
 |简体中文名= 宫崎骏
 |别名={
 [宮崎駿]
+[罗马字|Miyazaki Hayao]
 }
 |性别= 男
 }}`
 
 const characterInfobox = `{{Infobox Crt
 |简体中文名= 鲁路修·兰佩路基
+|别名={
+[ゼロ]
+[英文名|Lelouch Lamperouge]
+[罗马字|Lelouch Lamperouge]
+[昵称|]
+}
 |性别= 男
 }}`
 
@@ -130,6 +137,26 @@ func TestUpgradeSchemaFromLegacy(t *testing.T) {
 	assertFTSHit(t, conn, "persons_fts", "宫崎骏", 1)
 	assertFTSHit(t, conn, "characters_fts", "兰佩路基", 2)
 
+	// 别名（含罗马字）应在升级时回填进检索列：按归一化后的罗马字可命中
+	var pAliases, pNorm, cAliases, cNorm string
+	if err := conn.QueryRow(`SELECT aliases, search_norm FROM persons WHERE id = 1`).Scan(&pAliases, &pNorm); err != nil {
+		t.Fatalf("查询 persons 1 检索列: %v", err)
+	}
+	if pAliases != "宮崎駿 Miyazaki Hayao" {
+		t.Errorf("persons.aliases = %q, want 宮崎駿 Miyazaki Hayao", pAliases)
+	}
+	if want := norm.Join("宮崎駿", "宫崎骏", pAliases); pNorm != want {
+		t.Errorf("persons.search_norm = %q, want %q", pNorm, want)
+	}
+	if err := conn.QueryRow(`SELECT aliases, search_norm FROM characters WHERE id = 2`).Scan(&cAliases, &cNorm); err != nil {
+		t.Fatalf("查询 characters 2 检索列: %v", err)
+	}
+	if cAliases != "ゼロ Lelouch Lamperouge" {
+		t.Errorf("characters.aliases = %q, want ゼロ Lelouch Lamperouge", cAliases)
+	}
+	assertFTSSubstr(t, conn, "persons_fts", "miyazakihayao", 1)
+	assertFTSSubstr(t, conn, "characters_fts", "lelouchlamperouge", 2)
+
 	// name_cn 索引应与全新导入的库结构一致
 	for _, idx := range []string{"idx_persons_name_cn", "idx_characters_name_cn"} {
 		var n int64
@@ -203,8 +230,9 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	if err := InitSchema(conn); err != nil {
 		t.Fatalf("InitSchema: %v", err)
 	}
-	mustExec(t, conn, `INSERT INTO persons (id, name, name_cn, type) VALUES (1, 'x', '测试中文名', 1)`)
-	mustExec(t, conn, `INSERT INTO characters (id, role, name) VALUES (2, 1, 'z')`)
+	// 新导入路径直接写入派生检索列（importer.importPersons 同款），FTS 由此填充
+	mustExec(t, conn, `INSERT INTO persons (id, name, name_cn, search_norm, type) VALUES (1, 'x', '测试中文名', 'x测试中文名', 1)`)
+	mustExec(t, conn, `INSERT INTO characters (id, role, name, search_norm) VALUES (2, 1, 'z', 'z')`)
 	mustExec(t, conn, `INSERT INTO subjects (id, type, name, tags, meta_tags) VALUES
 		(10, 1, 's', '[{"name":"奇幻","count":9}]', '["小说"]')`)
 	if err := FinalizeSchema(conn); err != nil {
@@ -226,6 +254,9 @@ func TestFinalizeSchemaMarksBackfillDone(t *testing.T) {
 	}
 	if done, err = metaGet(conn, tagMapsBuilt); err != nil || done != "1" {
 		t.Fatalf("tag_maps_built 标记 = %q, err=%v, want 1", done, err)
+	}
+	if done, err = metaGet(conn, personSearchBuilt); err != nil || done != "1" {
+		t.Fatalf("person_search_built 标记 = %q, err=%v, want 1", done, err)
 	}
 	before := countRows(t, conn, `SELECT COUNT(*) FROM persons WHERE name_cn = ''`)
 	if before != 0 {
@@ -302,6 +333,17 @@ func countRows(t *testing.T, conn *sql.DB, q string) int64 {
 		t.Fatalf("query %q: %v", q, err)
 	}
 	return n
+}
+
+// assertFTSSubstr 以检索接口同款方式（search_norm LIKE '%qn%'）验证归一化命中，
+// 用于罗马字等「只靠归一化才能对上」的写法。
+func assertFTSSubstr(t *testing.T, conn *sql.DB, table, qn string, wantID int64) {
+	t.Helper()
+	var id int64
+	err := conn.QueryRow(`SELECT rowid FROM `+table+` WHERE search_norm LIKE ?`, "%"+qn+"%").Scan(&id)
+	if err != nil || id != wantID {
+		t.Errorf("%s search_norm LIKE %%%s%%: got id=%d err=%v, want %d", table, qn, id, err, wantID)
+	}
 }
 
 func assertFTSHit(t *testing.T, conn *sql.DB, table, phrase string, wantID int64) {
