@@ -92,7 +92,7 @@ import { externalUrl } from '../lib/settings.svelte.js'
   <form class="grid gap-3 card p-4 lg:grid-cols-3" onsubmit={(e) => { e.preventDefault(); submit() }}>
     <div>
       <label class="label" for="person-q">关键词</label>
-      <input id="person-q" class="input" type="text" placeholder="如：宫崎骏" bind:value={f.q} />
+      <input id="person-q" class="input" type="text" placeholder="如：宫崎骏 / Miyazaki Hayao" bind:value={f.q} />
     </div>
     <div>
       <label class="label" for="person-type">类型</label>

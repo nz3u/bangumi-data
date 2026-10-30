@@ -30,27 +30,34 @@ CREATE TABLE IF NOT EXISTS subjects (
     meta_tags     TEXT    NOT NULL DEFAULT ''
 );
 
+-- aliases 是 infobox「别名」中各项的值（去掉 罗马字/英文名 等子类前缀），
+-- search_norm 是 name + name_cn + aliases 经 norm.Fold 归一化后的检索串。
+-- 二者与 subjects 同构：别名（尤其角色的罗马字 Hirasawa Yui）据此进入全文索引。
 CREATE TABLE IF NOT EXISTS persons (
-    id       INTEGER PRIMARY KEY,
-    name     TEXT NOT NULL,
-    name_cn  TEXT NOT NULL DEFAULT '',
-    type     INTEGER NOT NULL,
-    career   TEXT NOT NULL DEFAULT '',
-    infobox  TEXT NOT NULL DEFAULT '',
-    summary  TEXT NOT NULL DEFAULT '',
-    comments INTEGER NOT NULL DEFAULT 0,
-    collects INTEGER NOT NULL DEFAULT 0
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    name_cn     TEXT NOT NULL DEFAULT '',
+    aliases     TEXT NOT NULL DEFAULT '',
+    search_norm TEXT NOT NULL DEFAULT '',
+    type        INTEGER NOT NULL,
+    career      TEXT NOT NULL DEFAULT '',
+    infobox     TEXT NOT NULL DEFAULT '',
+    summary     TEXT NOT NULL DEFAULT '',
+    comments    INTEGER NOT NULL DEFAULT 0,
+    collects    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS characters (
-    id       INTEGER PRIMARY KEY,
-    role     INTEGER NOT NULL,
-    name     TEXT NOT NULL,
-    name_cn  TEXT NOT NULL DEFAULT '',
-    infobox  TEXT NOT NULL DEFAULT '',
-    summary  TEXT NOT NULL DEFAULT '',
-    comments INTEGER NOT NULL DEFAULT 0,
-    collects INTEGER NOT NULL DEFAULT 0
+    id          INTEGER PRIMARY KEY,
+    role        INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    name_cn     TEXT NOT NULL DEFAULT '',
+    aliases     TEXT NOT NULL DEFAULT '',
+    search_norm TEXT NOT NULL DEFAULT '',
+    infobox     TEXT NOT NULL DEFAULT '',
+    summary     TEXT NOT NULL DEFAULT '',
+    comments    INTEGER NOT NULL DEFAULT 0,
+    collects    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS episodes (
@@ -209,20 +216,20 @@ CREATE INDEX IF NOT EXISTS idx_episodes_airdate ON episodes(airdate);
 `
 
 // ftsSQL 全文搜索虚拟表。trigram tokenizer 支持中文子串匹配（>=3 字符走索引）。
-// 人物/角色的 name_cn 为 infobox 中提取的简体中文名。
 //
-// 条目表只索引 search_norm 一列：它是 name + name_cn + aliases 经 norm.Fold
+// 所有表都只索引 search_norm 一列：它是 name + name_cn + aliases 经 norm.Fold
 // 归一化后的串，索引与查询同口径，因此能命中"被符号切断"（少女歌剧 -> 少女☆歌剧）
-// 与"只在别名中出现"（Kaguya Hime）的写法。单列也让索引体积与两列原文相当。
-// 章节表同理只索引归一化后的 name + name_cn；章节搜索命中所属条目标题的
-// 部分由查询侧复用 subjects_fts 完成（见 api.searchEpisodes），不重复存储。
+// 与"只在别名中出现"（Kaguya Hime、罗马字 Hirasawa Yui）的写法。
+// 人物/角色表同理——别名（含罗马字）参与索引后，按罗马字可检索到中文名。
+// 章节表只索引归一化后的 name + name_cn；章节搜索命中所属条目标题的部分
+// 由查询侧复用 subjects_fts 完成（见 api.searchEpisodes），不重复存储。
 const ftsSQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS subjects_fts
     USING fts5(search_norm, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
-    USING fts5(name, name_cn, tokenize = 'trigram');
+    USING fts5(search_norm, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
-    USING fts5(name, name_cn, tokenize = 'trigram');
+    USING fts5(search_norm, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts
     USING fts5(search_norm, tokenize = 'trigram');
 `
@@ -232,23 +239,23 @@ CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts
 // 章节约 21% 行标题为空（多为音乐碟轨），跳过以减小索引体积。
 const ftsPopulateSQL = `
 INSERT INTO subjects_fts(rowid, search_norm) SELECT id, search_norm FROM subjects;
-INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
-INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
+INSERT INTO persons_fts(rowid, search_norm) SELECT id, search_norm FROM persons;
+INSERT INTO characters_fts(rowid, search_norm) SELECT id, search_norm FROM characters;
 INSERT INTO episodes_fts(rowid, search_norm) SELECT id, search_norm FROM episodes WHERE search_norm <> '';
 `
 
 // ftsPersonCharPopulateSQL 仅重建人物/角色 FTS 时的填充语句（升级迁移用）。
 const ftsPersonCharPopulateSQL = `
-INSERT INTO persons_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM persons;
-INSERT INTO characters_fts(rowid, name, name_cn) SELECT id, name, name_cn FROM characters;
+INSERT INTO persons_fts(rowid, search_norm) SELECT id, search_norm FROM persons;
+INSERT INTO characters_fts(rowid, search_norm) SELECT id, search_norm FROM characters;
 `
 
 // ftsPersonCharSQL 仅人物/角色 FTS 的建表语句（升级迁移用）。
 const ftsPersonCharSQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS persons_fts
-    USING fts5(name, name_cn, tokenize = 'trigram');
+    USING fts5(search_norm, tokenize = 'trigram');
 CREATE VIRTUAL TABLE IF NOT EXISTS characters_fts
-    USING fts5(name, name_cn, tokenize = 'trigram');
+    USING fts5(search_norm, tokenize = 'trigram');
 `
 
 // ftsSubjectSQL 仅条目 FTS 的建表语句（升级迁移用）。
@@ -301,7 +308,8 @@ func InitSchema(conn *sql.DB) error {
 
 // FinalizeSchema 数据装载完成后调用：创建二级索引、FTS 虚拟表并集合式填充，
 // 同时构建标签/元标签聚合表与倒排映射表（建议与标签过滤数据源）。
-// 新导入的数据已含 name_cn 列，直接标记回填完成，避免 serve 启动时重复扫描。
+// 新导入的数据已含 name_cn / aliases / search_norm 派生列，直接标记回填完成，
+// 避免 serve 启动时重复扫描。
 func FinalizeSchema(conn *sql.DB) error {
 	if err := ExecMulti(conn, indexSQL); err != nil {
 		return err
@@ -317,8 +325,8 @@ func FinalizeSchema(conn *sql.DB) error {
 	}
 	return ExecMulti(conn,
 		`INSERT OR REPLACE INTO schema_meta(key, value)
-		 VALUES ('name_cn_backfilled', '1'), ('tag_stats_built', '1'), ('tag_maps_built', '1'),
-		        ('episodes_fts_built', '1'), ('entities_decoded', '1')`)
+		 VALUES ('name_cn_backfilled', '1'), ('person_search_built', '1'), ('tag_stats_built', '1'),
+		        ('tag_maps_built', '1'), ('episodes_fts_built', '1'), ('entities_decoded', '1')`)
 }
 
 // EnsureIndexes 为已有数据库幂等补建后加的索引（serve 启动时调用）。

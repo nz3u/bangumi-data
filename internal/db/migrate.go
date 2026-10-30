@@ -1,13 +1,16 @@
 // 已有数据库的一次性数据升级（serve 启动时幂等调用）。
 //
-// 背景：persons/characters 原本只有 name 列；为支持按 infobox 中的
-// 「简体中文名」搜索，新增 name_cn 列并回填，同时把 FTS 虚拟表
-// 扩展为 (name, name_cn)。旧库首次启动时自动完成迁移：
-//  1. 补建 persons.name_cn / characters.name_cn 列（ALTER TABLE）
+// 背景：persons/characters 原本只有 name 列。先是为支持按 infobox 中的
+// 「简体中文名」搜索补建 name_cn 并扩展 FTS；之后为支持按别名（尤其角色的
+// 罗马字，如 Hirasawa Yui -> 平泽唯）检索，补建 aliases / search_norm，
+// 并把人物/角色的 FTS 统一为单列 search_norm（与 subjects 同构）。
+// 旧库首次启动时自动完成迁移：
+//  1. 补建 persons/characters 的 name_cn / aliases / search_norm 列（ALTER TABLE）
 //  2. 逐行解析 infobox 回填「简体中文名」（耗时一次性操作，
 //     完成后写入 schema_meta 标记，之后跳过）
-//  3. FTS 表缺少 name_cn 列时重建并重新填充
-//  4. 构建标签/元标签聚合表与倒排映射表（建议与标签过滤数据源，
+//  3. 逐行解析 infobox 别名回填 aliases / search_norm（同上，独立标记）
+//  4. FTS 表结构陈旧时重建并重新填充（单列 search_norm）
+//  5. 构建标签/元标签聚合表与倒排映射表（建议与标签过滤数据源，
 //     tag_stats_built / tag_maps_built 标记）
 package db
 
@@ -23,6 +26,7 @@ import (
 )
 
 const nameCNBackfillDone = "name_cn_backfilled"
+const personSearchBuilt = "person_search_built"
 const subjectSearchBuilt = "subject_search_built"
 const tagStatsBuilt = "tag_stats_built"
 const tagMapsBuilt = "tag_maps_built"
@@ -41,18 +45,26 @@ func UpgradeSchema(conn *sql.DB) error {
 	}
 
 	// 1. 补列（文本解码与派生列回填的前置条件），并同步补建配套索引
-	altered := false
+	nameCNAltered := false
+	personSearchAltered := false
 	for _, table := range []string{"persons", "characters"} {
-		has, err := tableHasColumn(conn, table, "name_cn")
-		if err != nil {
-			return fmt.Errorf("检查 %s.%s: %w", table, "name_cn", err)
-		}
-		if !has {
-			if _, err := conn.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN name_cn TEXT NOT NULL DEFAULT ''`, table)); err != nil {
-				return fmt.Errorf("补建 %s.name_cn: %w", table, err)
+		for _, col := range []string{"name_cn", "aliases", "search_norm"} {
+			has, err := tableHasColumn(conn, table, col)
+			if err != nil {
+				return fmt.Errorf("检查 %s.%s: %w", table, col, err)
 			}
-			log.Printf("已为 %s 补建 name_cn 列", table)
-			altered = true
+			if has {
+				continue
+			}
+			if _, err := conn.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, table, col)); err != nil {
+				return fmt.Errorf("补建 %s.%s: %w", table, col, err)
+			}
+			log.Printf("已为 %s 补建 %s 列", table, col)
+			if col == "name_cn" {
+				nameCNAltered = true
+			} else {
+				personSearchAltered = true
+			}
 		}
 	}
 	// 同步补建 name_cn 索引，保证与全新导入的库结构一致
@@ -139,7 +151,7 @@ func UpgradeSchema(conn *sql.DB) error {
 	//    由 FinalizeSchema 置标记跳过）
 	if done, err := metaGet(conn, nameCNBackfillDone); err != nil {
 		return err
-	} else if altered || done != "1" {
+	} else if nameCNAltered || done != "1" {
 		for _, table := range []string{"persons", "characters"} {
 			n, err := backfillNameCN(conn, table)
 			if err != nil {
@@ -154,10 +166,30 @@ func UpgradeSchema(conn *sql.DB) error {
 		}
 	}
 
-	// 4. 人物/角色 FTS 缺少 name_cn 时重建（填充的是解码+回填后的最终文本）
+	// 4. 回填人物/角色的别名与归一化检索串（罗马字等别名由此进入 FTS）。
+	//    排在 name_cn 回填之后：search_norm 由 name + name_cn + aliases 组成，
+	//    中文名缺失会让检索串少一段。旧库 32 万行一次性回填约需数秒。
+	if done, err := metaGet(conn, personSearchBuilt); err != nil {
+		return err
+	} else if personSearchAltered || done != "1" {
+		for _, table := range []string{"persons", "characters"} {
+			n, err := backfillPersonSearch(conn, table)
+			if err != nil {
+				return fmt.Errorf("回填 %s 检索列: %w", table, err)
+			}
+			if n > 0 {
+				log.Printf("已从 infobox 回填 %s.aliases/search_norm %d 行（耗时一次性，之后跳过）", table, n)
+			}
+		}
+		if err := metaSet(conn, personSearchBuilt, "1"); err != nil {
+			return err
+		}
+	}
+
+	// 5. 人物/角色 FTS 结构陈旧时重建（填充的是解码+回填后的最终检索串）
 	rebuild := false
 	for _, table := range []string{"persons_fts", "characters_fts"} {
-		has, err := ftsHasColumn(conn, table, "name_cn")
+		has, err := ftsHasColumn(conn, table, "search_norm")
 		if err != nil {
 			return fmt.Errorf("检查 %s 结构: %w", table, err)
 		}
@@ -176,11 +208,11 @@ func UpgradeSchema(conn *sql.DB) error {
 			return err
 		}
 		if tableRows(conn, "persons") > 0 || tableRows(conn, "characters") > 0 {
-			log.Println("已重建 persons_fts / characters_fts（含 name_cn）")
+			log.Println("已重建 persons_fts / characters_fts（单列 search_norm，含别名/罗马字）")
 		}
 	}
 
-	// 5. 条目检索列回填与条目 FTS：
+	// 6. 条目检索列回填与条目 FTS：
 	//    subjects 原本只按 name / name_cn 建 trigram 索引，存在两类漏召回——
 	//    检索词被原名中的符号切断（「少女歌剧」匹配不到「少女☆歌剧」）、
 	//    检索词只出现在 infobox 的别名里（「Kaguya Hime」）。
@@ -220,7 +252,7 @@ func UpgradeSchema(conn *sql.DB) error {
 		}
 	}
 
-	// 6. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
+	// 7. 标签/元标签派生表（聚合表=建议数据源，倒排映射表=标签过滤索引）：
 	//    旧库缺表或未标记时一次性从 subjects 的 JSON 字段展开构建（新导入的库
 	//    由 FinalizeSchema 构建并置标记，此处直接跳过）。
 	//    聚合表与映射表使用独立标记：已发布版本只置过 tag_stats_built，
@@ -269,7 +301,7 @@ func UpgradeSchema(conn *sql.DB) error {
 		}
 	}
 
-	// 7. 章节检索列回填与章节 FTS：
+	// 8. 章节检索列回填与章节 FTS：
 	//    episodes.search_norm（归一化后的 name + name_cn）已在步骤 1 补列，
 	//    此处回填空行并构建只索引该列的 episodes_fts。章节搜索中「命中所属
 	//    条目标题」的部分复用 subjects_fts（见 api.searchEpisodes），无需重复存储。
@@ -334,7 +366,7 @@ func NeedsUpgrade(conn *sql.DB) bool {
 	}
 	// 迁移标记任一缺失即需要
 	for _, flag := range []string{
-		nameCNBackfillDone, subjectSearchBuilt, tagStatsBuilt,
+		nameCNBackfillDone, personSearchBuilt, subjectSearchBuilt, tagStatsBuilt,
 		tagMapsBuilt, episodesFTSBuilt, entitiesDecoded,
 	} {
 		if done, err := metaGet(conn, flag); err != nil || done != "1" {
@@ -344,6 +376,8 @@ func NeedsUpgrade(conn *sql.DB) bool {
 	// 迁移目标列缺失即需要
 	for _, tc := range [][2]string{
 		{"persons", "name_cn"}, {"characters", "name_cn"},
+		{"persons", "aliases"}, {"persons", "search_norm"},
+		{"characters", "aliases"}, {"characters", "search_norm"},
 		{"subjects", "aliases"}, {"subjects", "search_norm"},
 		{"episodes", "search_norm"},
 	} {
@@ -355,7 +389,7 @@ func NeedsUpgrade(conn *sql.DB) bool {
 	// FTS 结构（列缺失或整表缺失时迁移会重建）
 	for _, fc := range [][2]string{
 		{"subjects_fts", "search_norm"},
-		{"persons_fts", "name_cn"}, {"characters_fts", "name_cn"},
+		{"persons_fts", "search_norm"}, {"characters_fts", "search_norm"},
 	} {
 		has, err := ftsHasColumn(conn, fc[0], fc[1])
 		if err != nil || !has {
@@ -527,6 +561,80 @@ func backfillSubjectSearch(conn *sql.DB) (int64, error) {
 		}
 		for _, u := range updates[start:end] {
 			if _, err := stmt.Exec(u.aliases, u.norm, u.id); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return int64(applied), err
+			}
+		}
+		if err := stmt.Close(); err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		if err := tx.Commit(); err != nil {
+			return int64(applied), err
+		}
+		applied = end
+	}
+	return int64(len(updates)), nil
+}
+
+// backfillPersonSearch 全表扫描 search_norm 为空的 persons/characters 行，
+// 解析 infobox 抽取别名与罗马字（[罗马字|Hirasawa Yui] / 顶层 |罗马字=）
+// 并与 name / name_cn 一起算出归一化检索串后批量更新（同 backfillSubjectSearch）。
+func backfillPersonSearch(conn *sql.DB, table string) (int64, error) {
+	rows, err := conn.Query(fmt.Sprintf(`SELECT id, name, name_cn, infobox FROM %s WHERE search_norm = ''`, table))
+	if err != nil {
+		return 0, err
+	}
+	type searchRow struct {
+		id       int64
+		aliases  string
+		normText string
+	}
+	updates := make([]searchRow, 0, 4096)
+	scanned := 0
+	for rows.Next() {
+		var (
+			id      int64
+			name    string
+			nameCN  string
+			infobox string
+		)
+		if err := rows.Scan(&id, &name, &nameCN, &infobox); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		scanned++
+		if len(updates) > 0 && scanned%100000 == 0 {
+			log.Printf("回填 %s 检索列：已扫描 %d 行…", table, scanned)
+		}
+		aliases := wiki.ExtractPersonAliasesText(infobox)
+		updates = append(updates, searchRow{id: id, aliases: aliases, normText: norm.Join(name, nameCN, aliases)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	const batch = 20000
+	applied := 0
+	for start := 0; start < len(updates); start += batch {
+		end := start + batch
+		if end > len(updates) {
+			end = len(updates)
+		}
+		tx, err := conn.Begin()
+		if err != nil {
+			return int64(applied), err
+		}
+		stmt, err := tx.Prepare(fmt.Sprintf(`UPDATE %s SET aliases = ?, search_norm = ? WHERE id = ?`, table))
+		if err != nil {
+			tx.Rollback()
+			return int64(applied), err
+		}
+		for _, u := range updates[start:end] {
+			if _, err := stmt.Exec(u.aliases, u.normText, u.id); err != nil {
 				stmt.Close()
 				tx.Rollback()
 				return int64(applied), err
@@ -721,7 +829,7 @@ func decodeEpisodeEntities(conn *sql.DB) (int64, error) {
 }
 
 // decodePersonEntities 解码 persons/characters 文本字段，
-// 并从解码后的 infobox 重取「简体中文名」。
+// 并从解码后的 infobox 重取「简体中文名」及派生检索列（aliases/search_norm）。
 func decodePersonEntities(conn *sql.DB, table string) (int64, error) {
 	rows, err := conn.Query(fmt.Sprintf(`SELECT id, name, infobox, summary FROM %s
 		WHERE name LIKE '%%&%%' OR infobox LIKE '%%&%%' OR summary LIKE '%%&%%'`, table))
@@ -729,14 +837,15 @@ func decodePersonEntities(conn *sql.DB, table string) (int64, error) {
 		return 0, err
 	}
 	type row struct {
-		id                 int64
+		id                        int64
 		name, ib, summary, nameCN string
+		aliases, normText         string
 	}
 	updates := make([]row, 0, 64)
 	for rows.Next() {
 		var (
-			r                    row
-			name, ib, summary    string
+			r                 row
+			name, ib, summary string
 		)
 		if err := rows.Scan(&r.id, &name, &ib, &summary); err != nil {
 			rows.Close()
@@ -746,6 +855,8 @@ func decodePersonEntities(conn *sql.DB, table string) (int64, error) {
 		r.ib = normDecode(ib)
 		r.summary = normDecode(summary)
 		r.nameCN = wiki.ExtractNameCN(r.ib)
+		r.aliases = wiki.ExtractPersonAliasesText(r.ib)
+		r.normText = norm.Join(r.name, r.nameCN, r.aliases)
 		if r.name != name || r.ib != ib || r.summary != summary {
 			updates = append(updates, r)
 		}
@@ -755,10 +866,10 @@ func decodePersonEntities(conn *sql.DB, table string) (int64, error) {
 		return 0, err
 	}
 	rows.Close()
-	if err := applyUpdates(conn, fmt.Sprintf(`UPDATE %s SET name=?, infobox=?, summary=?, name_cn=? WHERE id=?`, table),
+	if err := applyUpdates(conn, fmt.Sprintf(`UPDATE %s SET name=?, infobox=?, summary=?, name_cn=?, aliases=?, search_norm=? WHERE id=?`, table),
 		func(stmt *sql.Stmt) error {
 			for _, u := range updates {
-				if _, err := stmt.Exec(u.name, u.ib, u.summary, u.nameCN, u.id); err != nil {
+				if _, err := stmt.Exec(u.name, u.ib, u.summary, u.nameCN, u.aliases, u.normText, u.id); err != nil {
 					return err
 				}
 			}

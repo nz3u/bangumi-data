@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 )
@@ -241,20 +239,6 @@ func (h *handler) constants(c *gin.Context) {
 	})
 }
 
-// ftsMinRunes trigram 分词器按 3 个字符建索引，查询词达到该长度才能命中全文索引。
-const ftsMinRunes = 3
-
-// useFTS 关键词足够长时走 FTS 索引；更短的关键词由调用方回退 LIKE 子串匹配。
-func useFTS(q string) bool {
-	return utf8.RuneCountInString(q) >= ftsMinRunes
-}
-
-// ftsPhrase 构造 FTS5 trigram 短语查询。
-func ftsPhrase(q string) string {
-	q = strings.ReplaceAll(q, `"`, `""`)
-	return `"` + q + `"`
-}
-
 // parseIntQuery 解析整数查询参数，为空返回 0,false。
 func parseIntQuery(c *gin.Context, key string) (int, bool) {
 	s := c.Query(key)
@@ -276,7 +260,11 @@ func intParam(c *gin.Context, key string) (int64, bool) {
 	return v, true
 }
 
-// ftsNormRowIDs 条目检索：在 subjects_fts.search_norm 上做子串匹配，返回命中的 rowid。
+// ftsMinRunes trigram 分词器按 3 个字符建索引，查询词达到该长度才能命中全文索引。
+const ftsMinRunes = 3
+
+// ftsNormRowIDs 归一化子串检索：在 <table>.search_norm 上做子串匹配，返回命中的 rowid。
+// table 取 subjects_fts / persons_fts / characters_fts（均为单列 search_norm 的 FTS5 表）。
 // 传入的 qn 必须是 norm.Fold 的结果——标点、符号与空白都已被删除，
 // 因此可以直接拼进 LIKE 模式，不存在通配符注入。
 //
@@ -286,8 +274,8 @@ func intParam(c *gin.Context, key string) (int64, bool) {
 //
 // 注意：绝不能加 ESCAPE —— 带 ESCAPE 时 SQLite 不再做上述改写，
 // 查询计划从 "INDEX 0:L3" 退化为全表顺序扫描（实测 0.6ms -> 248ms）。
-func (h *handler) ftsNormRowIDs(qn string) ([]int64, error) {
-	rows, err := h.getDB().Query(`SELECT rowid FROM subjects_fts WHERE search_norm LIKE ?`, "%"+qn+"%")
+func (h *handler) ftsNormRowIDs(table, qn string) ([]int64, error) {
+	rows, err := h.getDB().Query(fmt.Sprintf(`SELECT rowid FROM %s WHERE search_norm LIKE ?`, table), "%"+qn+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -303,22 +291,23 @@ func (h *handler) ftsNormRowIDs(qn string) ([]int64, error) {
 	return ids, rows.Err()
 }
 
-// ftsRowIDs 通用 FTS 搜索：返回匹配 rowid 的集合。
-// table: persons_fts / characters_fts（条目检索请走 ftsNormRowIDs）
-func (h *handler) ftsRowIDs(table, q string) ([]int64, error) {
-	sql := fmt.Sprintf(`SELECT rowid FROM %s WHERE %s MATCH ?`, table, table)
-	rows, err := h.getDB().Query(sql, ftsPhrase(q))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+// maxEntityFTSIDs 人物/角色命中集上限：超过时放弃 IN 列表与分级排序，
+// 改为主表顺序扫描（同 maxSubjectFTSIDs，多见于 1~2 个字符的宽泛查询）。
+const maxEntityFTSIDs = 30000
+
+// nameTierOrder 构造人物/角色搜索的分级排序表达式及其参数（prefix 为表别名 c / p）：
+//
+//	0 原名或中文名完全等于查询词
+//	1 原名或中文名子串命中
+//	2 仅别名命中（罗马字 Hirasawa Yui、英文名、昵称等）
+//
+// 只对命中集求值，不改变 SELECT 的列。参数顺序与占位符出现顺序一致；
+// 若无分级（纯浏览）则返回空串，调用方退回按 id 排序。
+func nameTierOrder(prefix, q string) (string, []any) {
+	eq := q
+	like := "%" + escapeLike(q) + "%"
+	expr := fmt.Sprintf("CASE WHEN %[1]s.name = ? COLLATE NOCASE OR %[1]s.name_cn = ? COLLATE NOCASE THEN 0"+
+		" WHEN %[1]s.name LIKE ? ESCAPE '\\' OR %[1]s.name_cn LIKE ? ESCAPE '\\' THEN 1"+
+		" ELSE 2 END", prefix)
+	return expr, []any{eq, eq, like, like}
 }
