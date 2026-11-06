@@ -55,6 +55,77 @@ func TestSaveAtomicTmpNotLeftBehindOnSuccess(t *testing.T) {
 	}
 }
 
+// TestTrackingConfigRoundTrip 追踪配置随 config.json 原子保存与读取。
+func TestTrackingConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	want := &TrackingConfig{
+		UmamiEnabled:   true,
+		UmamiScriptURL: "https://umami.example.com/script.js",
+		UmamiWebsiteID: "abc-123",
+		UmamiEvents:    true,
+		CustomJS:       "console.log('track')",
+	}
+	if err := Save(path, &Config{Tracking: want}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Tracking == nil || *got.Tracking != *want {
+		t.Errorf("Tracking = %+v, want %+v", got.Tracking, want)
+	}
+	if !got.Tracking.UmamiActive() {
+		t.Error("启用且填了 Website ID 时应生效")
+	}
+}
+
+// TestTrackingDefaults 旧配置（无 tracking 字段）按默认值补全：
+// Umami 关闭、事件采集开启、脚本地址回退官方云服务；自定义 JS 独立于 Umami。
+func TestTrackingDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"bgm_api_key":"k"}`), 0o644); err != nil {
+		t.Fatalf("写旧配置: %v", err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// 未 EnsureDefaults 时也不得 panic：TrackingSettings 返回默认值副本
+	if c.TrackingSettings().UmamiEnabled {
+		t.Error("Umami 应默认关闭")
+	}
+	c.EnsureDefaults()
+	if c.Tracking.UmamiEnabled {
+		t.Error("Umami 应默认关闭")
+	}
+	if !c.Tracking.UmamiEvents {
+		t.Error("事件采集应默认开启")
+	}
+	if got := c.Tracking.EffectiveUmamiScriptURL(); got != DefaultUmamiScriptURL {
+		t.Errorf("脚本地址 = %q, want %q", got, DefaultUmamiScriptURL)
+	}
+	if c.Tracking.UmamiActive() {
+		t.Error("未启用时不应生效")
+	}
+}
+
+func TestTrackingUmamiActiveRequiresWebsiteID(t *testing.T) {
+	var nilCfg *TrackingConfig
+	if nilCfg.UmamiActive() {
+		t.Error("nil 配置不应生效")
+	}
+	if got := nilCfg.EffectiveUmamiScriptURL(); got != DefaultUmamiScriptURL {
+		t.Errorf("nil 配置脚本地址 = %q, want 默认值", got)
+	}
+	if (&TrackingConfig{UmamiEnabled: true}).UmamiActive() {
+		t.Error("缺 Website ID 不应生效")
+	}
+	if !(&TrackingConfig{UmamiEnabled: true, UmamiWebsiteID: " site "}).UmamiActive() {
+		t.Error("启用且填了 Website ID 应生效")
+	}
+}
+
 func TestVersionNilSafety(t *testing.T) {
 	var c *Config
 	if v := c.Version(); v != "" {

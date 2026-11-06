@@ -192,11 +192,12 @@ type importerStats struct {
 
 // adminConfigData GET /api/admin/config 的 data。
 type adminConfigData struct {
-	BgmApiKey  string               `json:"bgm_api_key,omitempty"`
-	AdminToken string               `json:"admin_token,omitempty"`
+	BgmApiKey  string                   `json:"bgm_api_key,omitempty"`
+	AdminToken string                   `json:"admin_token,omitempty"`
 	AutoUpdate *config.AutoUpdateConfig `json:"auto_update,omitempty"`
-	Server     *config.ServerConfig `json:"server,omitempty"`
-	Database   *config.DatabaseInfo `json:"database,omitempty"`
+	Server     *config.ServerConfig     `json:"server,omitempty"`
+	Tracking   *config.TrackingConfig   `json:"tracking,omitempty"`
+	Database   *config.DatabaseInfo     `json:"database,omitempty"`
 }
 
 // adminActionData POST /api/admin/update|cancel|reset 的 data。

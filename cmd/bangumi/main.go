@@ -288,6 +288,16 @@ func cmdConfig(args []string) error {
 			if cfg.Server != nil {
 				fmt.Printf("server.listen: %s\n", cfg.Server.Listen)
 			}
+			tk := cfg.TrackingSettings()
+			fmt.Printf("tracking.umami_enabled: %v\n", tk.UmamiEnabled)
+			fmt.Printf("tracking.umami_script_url: %s\n", tk.EffectiveUmamiScriptURL())
+			fmt.Printf("tracking.umami_website_id: %s\n", tk.UmamiWebsiteID)
+			fmt.Printf("tracking.umami_events: %v\n", tk.UmamiEvents)
+			if tk.CustomJS == "" {
+				fmt.Printf("tracking.custom_js: (未设置)\n")
+			} else {
+				fmt.Printf("tracking.custom_js: (%d 字节，见 config get)\n", len(tk.CustomJS))
+			}
 			if cfg.Database != nil {
 				fmt.Printf("database.version: %s\n", cfg.Database.Version)
 			} else {
@@ -368,6 +378,11 @@ func printConfigUsage(err error) error {
   auto_update.threads         下载并发数 (1-32，0 表示默认 8)
   auto_update.keep_zip        是否保留下载的 zip (true/false)
   server.listen               监听地址（如 :8080）
+  tracking.umami_enabled      启用 Umami 统计 (true/false)
+  tracking.umami_script_url   Umami 脚本地址（留空用官方云服务）
+  tracking.umami_website_id   Umami 站点 ID（启用时必填）
+  tracking.umami_events       采集表单提交与按钮点击事件 (true/false)
+  tracking.custom_js          注入页面底部的自定义脚本（其他追踪器）
 
 示例:
   bangumi config set auto_update.enabled true
@@ -416,6 +431,16 @@ func getConfigValue(cfg *config.Config, key string) (string, bool) {
 			return "", true
 		}
 		return cfg.Server.Listen, true
+	case "tracking.umami_enabled":
+		return fmt.Sprintf("%v", cfg.TrackingSettings().UmamiEnabled), true
+	case "tracking.umami_script_url":
+		return cfg.TrackingSettings().UmamiScriptURL, true
+	case "tracking.umami_website_id":
+		return cfg.TrackingSettings().UmamiWebsiteID, true
+	case "tracking.umami_events":
+		return fmt.Sprintf("%v", cfg.TrackingSettings().UmamiEvents), true
+	case "tracking.custom_js":
+		return cfg.TrackingSettings().CustomJS, true
 	case "database.version":
 		if cfg.Database == nil {
 			return "", true
@@ -427,14 +452,17 @@ func getConfigValue(cfg *config.Config, key string) (string, bool) {
 }
 
 func setConfigValue(cfg *config.Config, key, val string) error {
+	// 追踪配置是嵌套指针：先确保存在，避免写到 TrackingSettings 返回的临时副本上
+	if strings.HasPrefix(key, "tracking.") && cfg.Tracking == nil {
+		cfg.Tracking = &config.TrackingConfig{UmamiEvents: true}
+	}
 	switch key {
 	case "bgm_api_key":
 		cfg.BgmApiKey = strings.TrimSpace(val)
 	case "admin_token":
 		cfg.AdminToken = strings.TrimSpace(val)
 	case "auto_update.enabled":
-		b := strings.ToLower(strings.TrimSpace(val))
-		cfg.AutoUpdate.Enabled = b == "true" || b == "1" || b == "yes"
+		cfg.AutoUpdate.Enabled = isTrue(val)
 	case "auto_update.threads":
 		var n int
 		if _, err := fmt.Sscanf(val, "%d", &n); err != nil {
@@ -445,14 +473,29 @@ func setConfigValue(cfg *config.Config, key, val string) error {
 		}
 		cfg.AutoUpdate.Threads = n
 	case "auto_update.keep_zip":
-		b := strings.ToLower(strings.TrimSpace(val))
-		cfg.AutoUpdate.KeepZip = b == "true" || b == "1" || b == "yes"
+		cfg.AutoUpdate.KeepZip = isTrue(val)
 	case "server.listen":
 		cfg.Server.Listen = strings.TrimSpace(val)
+	case "tracking.umami_enabled":
+		cfg.TrackingSettings().UmamiEnabled = isTrue(val)
+	case "tracking.umami_script_url":
+		cfg.TrackingSettings().UmamiScriptURL = strings.TrimSpace(val)
+	case "tracking.umami_website_id":
+		cfg.TrackingSettings().UmamiWebsiteID = strings.TrimSpace(val)
+	case "tracking.umami_events":
+		cfg.TrackingSettings().UmamiEvents = isTrue(val)
+	case "tracking.custom_js":
+		cfg.TrackingSettings().CustomJS = val
 	default:
 		return fmt.Errorf("未知配置项 %q", key)
 	}
 	return nil
+}
+
+// isTrue 解析命令行里的布尔字面量（true/false、1/0、yes/no）。
+func isTrue(v string) bool {
+	b := strings.ToLower(strings.TrimSpace(v))
+	return b == "true" || b == "1" || b == "yes"
 }
 
 func cmdServe(args []string) error {

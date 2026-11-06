@@ -109,19 +109,19 @@ func NewRouterWithManager(conn *sql.DB, cons *common.Constants, webDir string, p
 		c.Redirect(http.StatusFound, "/swagger/index.html")
 	})
 
-	if mgr != nil {
-		if dataDir == "" {
-			dataDir = "data"
-		}
-		registerAdminRoutes(r, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)}, h)
-		// 供前端开箱检测的轻量接口（无需鉴权）
-		r.GET("/api/admin/public-status", func(c *gin.Context) {
-			adminPublicStatus(c, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)})
-		})
-		r.GET("/api/admin/public-status/stream", func(c *gin.Context) {
-			adminPublicStatusStream(c, adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)})
-		})
+	if dataDir == "" {
+		dataDir = "data"
 	}
+	deps := adminDeps{mgr: mgr, dataDir: dataDir, cfgPath: config.FilePath(dataDir)}
+	if mgr != nil {
+		registerAdminRoutes(r, deps, h)
+		// 供前端开箱检测的轻量接口（无需鉴权）
+		r.GET("/api/admin/public-status", func(c *gin.Context) { adminPublicStatus(c, deps) })
+		r.GET("/api/admin/public-status/stream", func(c *gin.Context) { adminPublicStatusStream(c, deps) })
+	}
+	// 统计追踪配置（无需鉴权）：前端启动时拉取，注入 Umami 与底部自定义脚本。
+	// 不在上面的分支内——未启用管理功能时也允许配置生效。
+	r.GET("/api/tracking", func(c *gin.Context) { adminTracking(c, deps) })
 
 	if webDir != "" {
 		if st, err := os.Stat(webDir); err == nil && st.IsDir() {
@@ -182,7 +182,8 @@ func maintenanceMiddleware(mgr *admin.Manager) gin.HandlerFunc {
 		}
 		p := c.Request.URL.Path
 		// 放行管理与健康检查、静态资源
-		if strings.HasPrefix(p, "/api/admin/") || p == "/api/health" || p == "/api/admin/public-status" || p == "/api/dbinfo" {
+		if strings.HasPrefix(p, "/api/admin/") || p == "/api/health" || p == "/api/admin/public-status" ||
+			p == "/api/dbinfo" || p == "/api/tracking" {
 			c.Next()
 			return
 		}

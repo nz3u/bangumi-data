@@ -113,15 +113,17 @@ func adminGetConfig(c *gin.Context, deps adminDeps) {
 		"admin_token": cfg.AdminToken,
 		"auto_update": cfg.AutoUpdate,
 		"server":      cfg.Server,
+		"tracking":    cfg.Tracking,
 		"database":    cfg.Database,
 	})
 }
 
 type putConfigReq struct {
-	BgmApiKey  *string              `json:"bgm_api_key"`
-	AdminToken *string              `json:"admin_token"`
+	BgmApiKey  *string                  `json:"bgm_api_key"`
+	AdminToken *string                  `json:"admin_token"`
 	AutoUpdate *config.AutoUpdateConfig `json:"auto_update"`
 	Server     *config.ServerConfig     `json:"server"`
+	Tracking   *config.TrackingConfig   `json:"tracking"`
 }
 
 // adminPutConfig 写入配置。
@@ -166,6 +168,14 @@ func adminPutConfig(c *gin.Context, deps adminDeps) {
 	if req.Server != nil {
 		cfg.Server = req.Server
 		cfg.Server.Listen = strings.TrimSpace(cfg.Server.Listen)
+	}
+	if req.Tracking != nil {
+		t := *req.Tracking
+		if err := normalizeTracking(&t); err != nil {
+			fail(c, 400, err.Error())
+			return
+		}
+		cfg.Tracking = &t
 	}
 	if err := config.Save(deps.cfgPath, cfg); err != nil {
 		fail(c, 500, err.Error())

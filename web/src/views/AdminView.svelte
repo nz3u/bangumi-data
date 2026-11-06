@@ -19,7 +19,12 @@
     auto_enabled: false,
     auto_threads: 0,
     auto_keep: false,
-    listen: ''
+    listen: '',
+    umami_enabled: false,
+    umami_url: '',
+    umami_id: '',
+    umami_events: true,
+    custom_js: ''
   })
 
   function getQueryToken() {
@@ -36,6 +41,11 @@
       form.auto_threads = cfg.auto_update?.threads ?? 0
       form.auto_keep = cfg.auto_update?.keep_zip ?? false
       form.listen = cfg.server?.listen ?? ''
+      form.umami_enabled = cfg.tracking?.umami_enabled ?? false
+      form.umami_url = cfg.tracking?.umami_script_url ?? ''
+      form.umami_id = cfg.tracking?.umami_website_id ?? ''
+      form.umami_events = cfg.tracking?.umami_events ?? true
+      form.custom_js = cfg.tracking?.custom_js ?? ''
       needsAuth = false
       error = ''
       const qt = getQueryToken()
@@ -61,7 +71,14 @@
         bgm_api_key: form.bgm_api_key,
         admin_token: form.admin_token,
         auto_update: { enabled: !!form.auto_enabled, threads: Number(form.auto_threads) || 0, keep_zip: !!form.auto_keep },
-        server: { listen: form.listen }
+        server: { listen: form.listen },
+        tracking: {
+          umami_enabled: !!form.umami_enabled,
+          umami_script_url: form.umami_url,
+          umami_website_id: form.umami_id,
+          umami_events: !!form.umami_events,
+          custom_js: form.custom_js
+        }
       })
       if (form.admin_token && form.admin_token !== getStoredToken()) {
         setStoredToken(form.admin_token)
@@ -193,6 +210,36 @@
             </label>
           </div>
           <p class="mt-2 text-xs leading-relaxed text-neutral-500">下载 → 导入临时库 → 完整性检查 → 原子切库 → 自动恢复，失败不影响旧库。</p>
+        </fieldset>
+
+        <fieldset class="rounded-xl border border-neutral-200 bg-neutral-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <legend class="px-2 text-sm font-medium">统计追踪</legend>
+          <label class="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" class="rounded" bind:checked={form.umami_enabled} />
+            启用 Umami 统计
+            <span class="text-xs font-normal text-neutral-500">（页面路由 + 可选事件）</span>
+          </label>
+          <div class="mt-3 grid gap-4 sm:grid-cols-2 min-w-0">
+            <label class="block">
+              <span class="label">Umami 脚本地址</span>
+              <input class="input w-full" bind:value={form.umami_url} placeholder="https://cloud.umami.is/script.js" />
+              <span class="hint">留空使用官方云服务，自建填自己的地址</span>
+            </label>
+            <label class="block">
+              <span class="label">Website ID</span>
+              <input class="input w-full" bind:value={form.umami_id} placeholder="Umami 站点 ID（启用时必填）" />
+              <span class="hint">Umami 后台「网站」里的 ID</span>
+            </label>
+          </div>
+          <label class="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" class="rounded" bind:checked={form.umami_events} />
+            采集表单提交与按钮点击事件
+          </label>
+          <label class="mt-3 block">
+            <span class="label">自定义 JS（注入页面底部）</span>
+            <textarea class="input w-full font-mono text-xs" rows="4" bind:value={form.custom_js} placeholder="// 其他追踪器，如 Plausible / GA，与 Umami 互不影响"></textarea>
+            <span class="hint">原样执行，只填可信代码；保存后刷新页面生效</span>
+          </label>
         </fieldset>
 
         <label class="block">

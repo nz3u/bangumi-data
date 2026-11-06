@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel.svelte'
 import LazyRoute from './components/LazyRoute.svelte'
   import { health, stats, dbInfo, openSystemStream } from './lib/api.js'
   import { adminConfig, getStoredToken } from './lib/admin.js'
+  import { trackPageview } from './lib/tracking.js'
   import GitHub from './components/GitHub.svelte';
   import UpdatingBanner from './components/UpdatingBanner.svelte';
 
@@ -115,9 +116,13 @@ import LazyRoute from './components/LazyRoute.svelte'
         return
       }
       document.title = `${titleOf(normalized)} · Bangumi 本地数据搜索`
+      // 标题更新后再上报页面浏览（Umami 未启用时为空操作）
+      trackPageview()
     })
     // 初始化 currentPath（处理直接刷新进入 /setup 等场景）
     currentPath = (window.location.pathname.replace(/\/+$/, '') || '/')
+    // 首屏也要有完整标题（listen 只在路由变化时触发；统计上报的标题取自这里）
+    document.title = `${titleOf(currentPath)} · Bangumi 本地数据搜索`
 
     // 数据库版本状态只在进入页面时请求一次（后端缓存检查结果，无需轮询）
     refreshDbInfo()
