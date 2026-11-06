@@ -1903,6 +1903,38 @@
                 }
             }
         },
+        "/api/tracking": {
+            "get": {
+                "description": "免鉴权的公开配置：Umami 开关/脚本地址/站点 ID、是否采集表单与按钮事件，以及页面底部自定义脚本。两者相互独立，均可不配置。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "服务状态"
+                ],
+                "summary": "统计追踪配置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.apiEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.trackingData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/wiki/batch": {
             "post": {
                 "description": "按 ID 返回指定表的原列数据；关联双向查找，实体资料只展开一层。",
@@ -1980,6 +2012,9 @@
                 },
                 "server": {
                     "$ref": "#/definitions/config.ServerConfig"
+                },
+                "tracking": {
+                    "$ref": "#/definitions/config.TrackingConfig"
                 }
             }
         },
@@ -2921,6 +2956,9 @@
                 },
                 "server": {
                     "$ref": "#/definitions/config.ServerConfig"
+                },
+                "tracking": {
+                    "$ref": "#/definitions/config.TrackingConfig"
                 }
             }
         },
@@ -3277,6 +3315,26 @@
                 }
             }
         },
+        "api.trackingData": {
+            "type": "object",
+            "properties": {
+                "custom_js": {
+                    "type": "string"
+                },
+                "umami_enabled": {
+                    "type": "boolean"
+                },
+                "umami_events": {
+                    "type": "boolean"
+                },
+                "umami_script_url": {
+                    "type": "string"
+                },
+                "umami_website_id": {
+                    "type": "string"
+                }
+            }
+        },
         "api.triggerReq": {
             "type": "object",
             "properties": {
@@ -3498,6 +3556,29 @@
             "type": "object",
             "properties": {
                 "listen": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.TrackingConfig": {
+            "type": "object",
+            "properties": {
+                "custom_js": {
+                    "description": "注入到页面底部的自定义脚本",
+                    "type": "string"
+                },
+                "umami_enabled": {
+                    "type": "boolean"
+                },
+                "umami_events": {
+                    "description": "表单提交与按钮点击事件",
+                    "type": "boolean"
+                },
+                "umami_script_url": {
+                    "description": "留空用 DefaultUmamiScriptURL",
+                    "type": "string"
+                },
+                "umami_website_id": {
                     "type": "string"
                 }
             }

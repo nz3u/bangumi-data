@@ -17,6 +17,9 @@
                     },
                     "server": {
                         "$ref": "#/components/schemas/config.ServerConfig"
+                    },
+                    "tracking": {
+                        "$ref": "#/components/schemas/config.TrackingConfig"
                     }
                 },
                 "type": "object"
@@ -958,6 +961,9 @@
                     },
                     "server": {
                         "$ref": "#/components/schemas/config.ServerConfig"
+                    },
+                    "tracking": {
+                        "$ref": "#/components/schemas/config.TrackingConfig"
                     }
                 },
                 "type": "object"
@@ -1315,6 +1321,26 @@
                 },
                 "type": "object"
             },
+            "api.trackingData": {
+                "properties": {
+                    "custom_js": {
+                        "type": "string"
+                    },
+                    "umami_enabled": {
+                        "type": "boolean"
+                    },
+                    "umami_events": {
+                        "type": "boolean"
+                    },
+                    "umami_script_url": {
+                        "type": "string"
+                    },
+                    "umami_website_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "api.triggerReq": {
                 "properties": {
                     "force": {
@@ -1535,6 +1561,29 @@
             "config.ServerConfig": {
                 "properties": {
                     "listen": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "config.TrackingConfig": {
+                "properties": {
+                    "custom_js": {
+                        "description": "注入到页面底部的自定义脚本",
+                        "type": "string"
+                    },
+                    "umami_enabled": {
+                        "type": "boolean"
+                    },
+                    "umami_events": {
+                        "description": "表单提交与按钮点击事件",
+                        "type": "boolean"
+                    },
+                    "umami_script_url": {
+                        "description": "留空用 DefaultUmamiScriptURL",
+                        "type": "string"
+                    },
+                    "umami_website_id": {
                         "type": "string"
                     }
                 },
@@ -3908,6 +3957,39 @@
                     }
                 },
                 "summary": "健康状态与表行数合并 SSE 推送",
+                "tags": [
+                    "服务状态"
+                ]
+            }
+        },
+        "/api/tracking": {
+            "get": {
+                "description": "免鉴权的公开配置：Umami 开关/脚本地址/站点 ID、是否采集表单与按钮事件，以及页面底部自定义脚本。两者相互独立，均可不配置。",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.apiEnvelope"
+                                        },
+                                        {
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/api.trackingData"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    }
+                },
+                "summary": "统计追踪配置",
                 "tags": [
                     "服务状态"
                 ]

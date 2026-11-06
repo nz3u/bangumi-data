@@ -20,16 +20,50 @@ type Config struct {
 	BgmApiKey string        `json:"bgm_api_key,omitempty"`
 	Database  *DatabaseInfo `json:"database,omitempty"`
 	// 管理与自动更新配置（新增字段，旧文件缺省时取默认值）
-	AdminToken string             `json:"admin_token,omitempty"`
+	AdminToken string            `json:"admin_token,omitempty"`
 	AutoUpdate *AutoUpdateConfig `json:"auto_update,omitempty"`
 	Server     *ServerConfig     `json:"server,omitempty"`
+	Tracking   *TrackingConfig   `json:"tracking,omitempty"`
 }
 
 // AutoUpdateConfig 自动更新行为配置。
 type AutoUpdateConfig struct {
-	Enabled bool   `json:"enabled"`
-	KeepZip bool   `json:"keep_zip,omitempty"`
-	Threads int    `json:"threads,omitempty"` // 0 表示使用默认 8
+	Enabled bool `json:"enabled"`
+	KeepZip bool `json:"keep_zip,omitempty"`
+	Threads int  `json:"threads,omitempty"` // 0 表示使用默认 8
+}
+
+// TrackingConfig 前台统计追踪配置，两段互不影响：
+//   - Umami：注入脚本后自动上报页面路由（含 SPA 切换），可选上报表单/按钮事件；
+//   - CustomJS：原样注入页面底部的自定义脚本，供 Plausible/GA 等其他追踪器使用。
+//
+// 均可单独关闭：umami_enabled=false 只关 Umami，custom_js 非空时照常注入。
+type TrackingConfig struct {
+	UmamiEnabled   bool   `json:"umami_enabled,omitempty"`
+	UmamiScriptURL string `json:"umami_script_url,omitempty"` // 留空用 DefaultUmamiScriptURL
+	UmamiWebsiteID string `json:"umami_website_id,omitempty"`
+	UmamiEvents    bool   `json:"umami_events,omitempty"` // 表单提交与按钮点击事件
+	CustomJS       string `json:"custom_js,omitempty"`    // 注入到页面底部的自定义脚本
+}
+
+// DefaultUmamiScriptURL Umami 官方云服务的脚本地址（自托管时填自己的地址）。
+const DefaultUmamiScriptURL = "https://cloud.umami.is/script.js"
+
+// EffectiveUmamiScriptURL 生效的 Umami 脚本地址：未填写时回退到官方云服务。
+func (t *TrackingConfig) EffectiveUmamiScriptURL() string {
+	if t == nil {
+		return DefaultUmamiScriptURL
+	}
+	if v := strings.TrimSpace(t.UmamiScriptURL); v != "" {
+		return v
+	}
+	return DefaultUmamiScriptURL
+}
+
+// UmamiActive 是否具备注入条件：已启用且填写了 Website ID。
+// 脚本地址有默认值，因此 Website ID 是唯一的必填项。
+func (t *TrackingConfig) UmamiActive() bool {
+	return t != nil && t.UmamiEnabled && strings.TrimSpace(t.UmamiWebsiteID) != ""
 }
 
 // ServerConfig 服务端可选配置（与环境变量/命令行互补，优先级：命令行 > 环境变量 > 配置文件）。
@@ -121,6 +155,19 @@ func (c *Config) EnsureDefaults() {
 	if c.Server == nil {
 		c.Server = &ServerConfig{}
 	}
+	if c.Tracking == nil {
+		// 首次出现该配置块：Umami 默认关闭，但事件采集默认打开
+		// （管理员勾选「启用 Umami」后即同时采集页面与事件）。
+		c.Tracking = &TrackingConfig{UmamiEvents: true}
+	}
+}
+
+// TrackingSettings 返回非 nil 的追踪配置（缺省时返回默认值副本，不修改 c）。
+func (c *Config) TrackingSettings() *TrackingConfig {
+	if c == nil || c.Tracking == nil {
+		return &TrackingConfig{UmamiEvents: true}
+	}
+	return c.Tracking
 }
 
 // GenerateToken 生成随机 admin token（16 字节 hex）。

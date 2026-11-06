@@ -112,6 +112,9 @@ docker compose up -d bangumi
     首行总开关可统一开启/关闭（部分开启显示为中间态），下方四项各自独立调整
   - **高亮颜色**：slate-200 / amber-100 / 自定义（取色器）；四项高亮全部关闭时该项自动隐藏
   - 命中判定与页内筛选一致：字面子串（不区分大小写）+ 拼音全拼/首字母回退
+- **统计追踪（后台配置）**：`/admin` 页可开启 Umami，上报页面路由切换，并可选上报表单提交与按钮点击事件；
+  「自定义 JS」原样注入页面底部，用于接入 Plausible/GA 等其他追踪器。两项互相独立、各自可关，
+  配置写入 `data/config.json` 的 `tracking` 字段，保存后刷新页面生效
 
 构建产物 `web/dist` 通过 `go:embed` 内嵌进二进制，单文件即可同时提供 API 与页面。
 `serve` 时若指定了 `-web` 目录（且存在）则优先托管磁盘目录，否则回退到内嵌页面。
@@ -160,6 +163,7 @@ bangumi version                                               版本号
 | `GET /api/stats` | 各表行数统计 |
 | `GET /api/dbinfo` | 数据库版本状态：本地版本记录（无记录=旧版本）、上游最新导出、是否落后（serve 启动即后台检查，之后每 6h 复查；前端右下角徽标与「可更新」提醒数据源） |
 | `GET /api/constants` | 全部 id→名称 常量（类型/平台/关联/职位），前端据此渲染 |
+| `GET /api/tracking` | 公开的统计追踪配置（Umami 开关/脚本地址/站点 ID、是否采集表单与按钮事件、页面底部自定义 JS），供前端启动时注入；不含任何密钥 |
 | `GET /api/pics/:kind/:id?size=` | 图片解析（轮询）：kind 取 person（人物头像）/ subject（条目封面）/ character（角色头像），size 支持 l/m/s/grid，返回 `{status: ok\|pending\|failed, path}`，path 为不含主机的 CDN 路径，由前端按设置拼接图片主机（默认 lain.bgm.tv，可在前端设置面板自定义） |
 | `GET /api/subjects/search?q=&type=&platform=&tag=&rank_min=&score_min=&date_from=&date_to=&nsfw=&sort=&order=&page=&size=` | 条目搜索/筛选（q 经符号归一化后匹配原名、中文名与 infobox 别名，见「全文搜索」；`tag` 同时匹配普通标签与元标签，支持多标签组合：`+必须包含,-必须排除`，逗号分隔多选，无前缀视为 `+`；`meta_tag` 参数保留向后兼容；`sort` 留空为默认排序——有关键词时按匹配位置（原名＞中文名＞别名＞归一化）加人气，无关键词时按 ID） |
 | `GET /api/subjects/tags?kind=tag\|meta\|all&q=&limit=` | 条目标签/元标签实时建议（`kind=all` 合并两张表并去重，`kind=tag`/`meta` 单独查；按使用次数降序，前缀命中优先；前端拉取候选池后做拼音首字母本地过滤） |

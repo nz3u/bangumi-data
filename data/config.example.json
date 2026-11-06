@@ -1,5 +1,13 @@
 {
   "bgm_api_key": "在这里填入 next.bgm.tv 的 API Key（HTTP Bearer）",
   "_说明": "本文件为模板。复制为 data/config.json 并填入真实 Key 后启用人物头像抓取；data/config.json 已被 git 忽略，不会入库。也可用环境变量 BANGUMI_API_KEY 代替。",
-  "_database说明": "import/update 命令完成后会自动写入 database 字段（导出版本号、摘要等），update 据此判断是否落后最新版本，无需手工维护。"
+  "_database说明": "import/update 命令完成后会自动写入 database 字段（导出版本号、摘要等），update 据此判断是否落后最新版本，无需手工维护。",
+  "tracking": {
+    "umami_enabled": false,
+    "umami_script_url": "https://cloud.umami.is/script.js",
+    "umami_website_id": "",
+    "umami_events": true,
+    "custom_js": ""
+  },
+  "_tracking说明": "统计追踪，也可在 /admin 页面配置。umami_enabled 为 true 且填了 umami_website_id 时注入 Umami：上报页面路由，umami_events 为 true 时同时上报表单提交与按钮点击；custom_js 原样注入页面底部，可放其他追踪器（Plausible/GA 等）。两者互不影响，均可单独关闭。"
 }
